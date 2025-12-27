@@ -655,7 +655,7 @@ struct _value_root : iabstract<Interface>
   [[nodiscard]]
   constexpr type_info const &_type() const noexcept final override
   {
-    return TYPEID(Value);
+    return ANY_TYPEID(Value);
   }
 
   [[nodiscard]]
@@ -712,7 +712,7 @@ struct [[ANY_EMPTY_BASES]] _value_root<Interface, Value>
   [[nodiscard]]
   constexpr type_info const &_type() const noexcept final override
   {
-    return TYPEID(Value);
+    return ANY_TYPEID(Value);
   }
 
   [[nodiscard]]
@@ -914,7 +914,7 @@ struct _value_proxy_root : iabstract<Interface>
   [[nodiscard]]
   constexpr type_info const &_type() const noexcept final override
   {
-    return _empty() ? TYPEID(void) : type(_value());
+    return _empty() ? ANY_TYPEID(void) : type(_value());
   }
 
   [[nodiscard]]
@@ -985,7 +985,7 @@ struct _reference_root : iabstract<Interface>
   [[nodiscard]]
   constexpr type_info const &_type() const noexcept final override
   {
-    return TYPEID(CvValue);
+    return ANY_TYPEID(CvValue);
   }
 
   [[nodiscard]]
@@ -1178,7 +1178,7 @@ struct _reference_proxy_root : iabstract<Interface>
   [[nodiscard]]
   constexpr type_info const &_type() const noexcept final override
   {
-    return _empty() ? TYPEID(void) : type(_value());
+    return _empty() ? ANY_TYPEID(void) : type(_value());
   }
 
   [[nodiscard]]
@@ -1304,7 +1304,7 @@ struct _any_dynamic_cast_t
   [[nodiscard]]
   constexpr auto *operator()(CvProxy *proxy_ptr) const noexcept
   {
-    return type(*proxy_ptr) == TYPEID(Value) ? _any_static_cast_t<Value>{}(proxy_ptr) : nullptr;
+    return type(*proxy_ptr) == ANY_TYPEID(Value) ? _any_static_cast_t<Value>{}(proxy_ptr) : nullptr;
   }
 };
 
@@ -1582,7 +1582,7 @@ private:
 //   [[nodiscard]]
 //   constexpr type_info const &_type() const noexcept final override
 //   {
-//     return TYPEID(CvValue);
+//     return ANY_TYPEID(CvValue);
 //   }
 
 //   [[nodiscard]]
@@ -1875,7 +1875,7 @@ private:
     if (type != ::any::type(*other))
       return false;
 
-    if (type == TYPEID(void))
+    if (type == ANY_TYPEID(void))
       return true;
 
     using value_type = value_of_t<iequality_comparable>;

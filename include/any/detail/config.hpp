@@ -17,11 +17,22 @@
 #pragma once
 
 #include <cassert>
+#include <cstdlib>
 
 #define ANY_PP_STRINGIZE(_ARG) #_ARG
 
 #define ANY_PP_LBRACKET2 [[
 #define ANY_PP_RBRACKET2 ]]
+
+#if defined(__clang__)
+#  define ANY_COMPILER_CLANG __clang_major__ * 100 + __clang_minor__
+#elif defined(__GNUC__)
+#  define ANY_COMPILER_GCC __GNUC__ * 100 + __GNUC_MINOR__
+#elif defined(_MSC_VER)
+#  define ANY_COMPILER_MSVC _MSC_VER
+#else
+#  error "Unsupported compiler"
+#endif
 
 // Define the pragma for the host compiler
 #if defined(_MSC_VER)
@@ -102,10 +113,22 @@
 #  define ANY_PRETTY_FUNCTION __PRETTY_FUNCTION__
 #endif
 
-#define ANY_ASSERT(...) ((__VA_ARGS__) ? void() : assert(__VA_ARGS__))
-
 #if __cpp_if_consteval
 #  define ANY_CONSTEVAL consteval
 #else
 #  define ANY_CONSTEVAL (std::is_constant_evaluated())
 #endif
+
+#define ANY_ASSERT(...)                                                                            \
+  do                                                                                               \
+  {                                                                                                \
+    if ANY_CONSTEVAL                                                                               \
+    {                                                                                              \
+      if (!(__VA_ARGS__))                                                                          \
+        ::any::_die(ANY_PP_STRINGIZE(__VA_ARGS__));                                                \
+    }                                                                                              \
+    else                                                                                           \
+    {                                                                                              \
+      assert(__VA_ARGS__);                                                                         \
+    }                                                                                              \
+  } while (false)

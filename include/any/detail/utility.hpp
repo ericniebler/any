@@ -24,7 +24,7 @@
 #include <exception>
 #include <new>
 #include <type_traits>
-#include <utility>
+#include <utility> // IWYU pragma: keep for std::unreachable
 
 ANY_DIAG_PUSH
 ANY_DIAG_SUPPRESS_MSVC(4141) // 'inline' used more than once

@@ -168,15 +168,17 @@ consteval void test_consteval()
 
 TEST_CASE("basic usage", "[any]")
 {
-  std::printf("%.*s\n", (int)TYPEID(foobar).name().size(), TYPEID(foobar).name().data());
+  std::printf("%.*s\n", (int)ANY_TYPEID(foobar).name().size(), ANY_TYPEID(foobar).name().data());
   std::printf("sizeof void*: %d\n", (int)sizeof(void *));
   std::printf("sizeof interface: %d\n", (int)sizeof(any::iabstract<ibaz>));
 
+#if ANY_COMPILER_CLANG || ANY_COMPILER_GCC >= 14'03
   test_consteval();
+#endif
 
   any::any<ibaz> m(foobar{});
   REQUIRE(m._in_situ());
-  REQUIRE(any::type(m) == TYPEID(foobar));
+  REQUIRE(any::type(m) == ANY_TYPEID(foobar));
 
   m.foo();
   m.bar();

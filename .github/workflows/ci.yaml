@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-on-${{ github.event_name }}-from-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+
+  build-cpu:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "CPU (clang 22, Debug)",         build: "Debug",   compiler: clang++-22, cxxflags: "-stdlib=libc++" }
+          - { name: "CPU (clang 22, Release, ASAN)", build: "Release", compiler: clang++-22, cxxflags: "-stdlib=libc++ -fsanitize=address" }
+          - { name: "CPU (gcc 14, Debug)",           build: "Debug",   compiler: g++-14,  cxxflags: "", }
+          - { name: "CPU (gcc 14, Release)",         build: "Release", compiler: g++-14,  cxxflags: "", }
+          - { name: "CPU (gcc 14, Release, ASAN)",   build: "Release", compiler: g++-14,  cxxflags: "-fsanitize=address" }
+          - { name: "CPU (gcc 14, Release, TSAN)",   build: "Release", compiler: g++-14,  cxxflags: "-fsanitize=thread" }
+
+    permissions:
+      contents: read  # This is required for actions/checkout
+
+    steps:
+      - name: Checkout any
+        uses: actions/checkout@v4
+        with:
+          path: any
+          persist-credentials: false
+      - name: Build and test CPU schedulers
+        env:
+          ASAN_OPTIONS: alloc_dealloc_mismatch=0
+        run: |
+          set -e;
+          source /etc/profile
+          set -x;
+
+          # Install dependencies
+          sudo apt-get update;
+          sudo apt-get install -y lsb-release wget software-properties-common
+
+          # Download the script
+          wget https://apt.llvm.org/llvm.sh
+          # Make the script executable
+          chmod +x llvm.sh
+          # Run the script to add the repo and install the default version, which is currently 22
+          sudo ./llvm.sh 22
+
+          sudo apt-get install -y ninja-build cmake clang-22 g++-14 libc++-22-dev
+
+          # Configure
+          cmake -S any -B build -GNinja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
+            -DCMAKE_CXX_FLAGS="${{ matrix.cxxflags }}" \
+            -DCMAKE_VERBOSE_MAKEFILE=ON \
+            ;
+
+          # Compile
+          cmake --build build -v;
+
+          # Tests
+          ctest --test-dir build --verbose --output-on-failure --timeout 60;
+
+  ci-cpu:
+    runs-on: ubuntu-latest
+    name: CI (CPU)
+    needs:
+      - build-cpu
+    steps:
+      - run: echo "CI (CPU) success"
+
+  build-windows:
+    runs-on: windows-2022
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { compiler: "cl", build: "Debug",   name: "msvc (Windows) (Debug)" }
+          - { compiler: "cl", build: "Release", name: "msvc (Windows) (Release)" }
+
+    steps:
+      - name: Checkout any (Windows)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build and test CPU schedulers (Windows)
+        shell: pwsh
+        run: |
+          powershell .github/workflows/test-windows.ps1 -Compiler '${{ matrix.compiler }}' -Config '${{ matrix.build }}'
+
+  ci-windows:
+    runs-on: windows-latest
+    name: CI (Windows)
+    needs:
+      - build-windows
+    steps:
+      - run: echo "CI (Windows) success"
+
+  # build-macos:
+  #   runs-on: macos-14-large
+  #   name: macos-${{ matrix.name }}
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       include:
+  #         - { compiler: "clang++",  build: "Debug",   cxxflags: "", name: "CPU (MacOS) (clang, Debug)" }
+  #         - { compiler: "clang++",  build: "Release", cxxflags: "", name: "CPU (MacOS) (clang, Release)" }
+  #   steps:
+  #     - name: Checkout any (MacOS)
+  #       uses: actions/checkout@v4
+  #       with:
+  #         persist-credentials: false
+
+  #     - name: Install dependencies
+  #       run: |
+  #         brew update
+  #         brew install ninja
+  #       shell: bash
+
+  #     - name: Build and test CPU schedulers (MacOS)
+  #       shell: bash
+  #       run: |
+  #         mkdir build
+  #         cmake -S any -Bbuild -GNinja \
+  #           -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
+  #           -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
+  #           -DCMAKE_CXX_FLAGS="${{ matrix.cxxflags }}" \
+  #           -DCMAKE_CXX_STANDARD=20 \
+  #           -DCMAKE_VERBOSE_MAKEFILE=ON \
+  #           ;
+
+  #         # Compile
+  #         cmake --build build -v;
+
+  #         # Tests
+  #         ctest --test-dir build --verbose --output-on-failure --timeout 60;
+
+  # ci-macos:
+  #   runs-on: macos-latest-large
+  #   name: CI (MacOS)
+  #   needs:
+  #     - build-macos
+  #   steps:
+  #     - run: echo "CI (MacOS) success"

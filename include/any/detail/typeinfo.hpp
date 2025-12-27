@@ -22,11 +22,11 @@
 #include <string_view>
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// type_info and TYPEID
+// type_info and ANY_TYPEID
 
 namespace any
 {
-#define TYPEID(...) ::any::typeid_of<__VA_ARGS__>
+#define ANY_TYPEID(...) ::any::typeid_of<__VA_ARGS__>
 
 namespace _detail
 {
