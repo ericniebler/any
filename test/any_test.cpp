@@ -173,7 +173,7 @@ TEST_CASE("basic usage", "[any]")
   std::printf("sizeof interface: %d\n", (int)sizeof(any::iabstract<ibaz>));
 
 #if ANY_COMPILER_CLANG || ANY_COMPILER_GCC >= 14'03
-  test_consteval();
+  test_consteval(); // NOLINT(invalid_consteval_call)
 #endif
 
   any::any<ibaz> m(foobar{});

@@ -1019,42 +1019,19 @@ struct _reference_proxy_root : iabstract<Interface>
     }
   }
 
-  constexpr _reference_proxy_root(_reference_proxy_root &&__other) noexcept
-    : _reference_proxy_root()
-  {
-    swap(__other);
-  }
+  _reference_proxy_root(_reference_proxy_root &&)            = delete;
+  _reference_proxy_root &operator=(_reference_proxy_root &&) = delete;
 
-  constexpr _reference_proxy_root(_reference_proxy_root const &__other) noexcept
+  constexpr void _copy(_reference_proxy_root const &other) noexcept
   {
     if ANY_CONSTEVAL
     {
-      value(__other)._indirect_bind(*this);
+      value(other)._indirect_bind(*this);
     }
     else
     {
-      std::memcpy(buffer, __other.buffer, sizeof(buffer));
+      std::memcpy(buffer, other.buffer, sizeof(buffer));
     }
-  }
-
-  constexpr _reference_proxy_root &operator=(_reference_proxy_root &&__other) noexcept
-  {
-    if (this != &__other)
-    {
-      _reset();
-      swap(__other);
-    }
-    return *this;
-  }
-
-  constexpr _reference_proxy_root &operator=(_reference_proxy_root const &__other) noexcept
-  {
-    if (this != &__other)
-    {
-      _reset();
-      _reference_proxy_root(__other).swap(*this);
-    }
-    return *this;
   }
 
   constexpr ~_reference_proxy_root()
@@ -1466,10 +1443,20 @@ public:
 
   // Implicit derived-to-base conversion constructor
   template <class Other>
-    requires extension_of<Interface<Other>, imovable>
+    requires extension_of<Interface<Other>, imovable> && (Other::_root_kind == _root_kind::_value)
   constexpr any(Interface<Other> other) noexcept(_as_large_as<Other>)
   {
     (*this)._assign(std::move(other));
+  }
+
+  template <class Other>
+    requires extension_of<Interface<Other>, icopyable>
+          && (Other::_root_kind == _root_kind::_reference)
+  constexpr any(Interface<Other> const &other)
+  {
+    Interface<Other> temp;
+    temp._copy(other);
+    (*this)._assign(std::move(temp));
   }
 
   template <_model_of<Interface> Value>
@@ -1482,16 +1469,28 @@ public:
 
   // Implicit derived-to-base conversion constructor
   template <class Other>
-    requires extension_of<Interface<Other>, imovable>
+    requires extension_of<Interface<Other>, imovable> && (Other::_root_kind == _root_kind::_value)
   constexpr any &operator=(Interface<Other> other) noexcept(_as_large_as<Other>)
   {
-    // Guard against self-assignment when other is a reference to *this
-    if constexpr (Other::_root_kind == _root_kind::_reference)
-      if (data(other) == data(*this))
-        return *this;
-
     reset(*this);
     (*this)._assign(std::move(other));
+    return *this;
+  }
+
+  template <class Other>
+    requires extension_of<Interface<Other>, icopyable>
+          && (Other::_root_kind == _root_kind::_reference)
+  constexpr any &operator=(Interface<Other> const &other)
+  {
+    // Guard against self-assignment when other is a reference to *this
+    if (data(other) == data(*this))
+      return *this;
+
+    Interface<Other> temp;
+    temp._copy(other);
+
+    reset(*this);
+    (*this)._assign(std::move(temp));
     return *this;
   }
 
@@ -1705,7 +1704,7 @@ private:
     // in the case where CvReferenceProxy is a base class of model_type, we can simply
     // downcast and copy the model directly.
     else if constexpr (std::derived_from<model_type, CvReferenceProxy>)
-      ref_ = *::any::_polymorphic_downcast<model_type const *>(proxy_ptr);
+      ref_._copy(*::any::_polymorphic_downcast<model_type const *>(proxy_ptr));
     // Otherwise, we are assigning from a derived reference to a base reference, and the
     // other reference is indirect (i.e., it holds a _reference_model in its buffer). We
     // need to copy the referant model.
