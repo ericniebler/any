@@ -15,4 +15,9 @@ include(Catch)
 
 add_executable(any_test any_test.cpp)
 target_link_libraries(any_test PRIVATE any Catch2::Catch2WithMain)
+target_compile_options(
+        any_test PRIVATE
+        $<$<CXX_COMPILER_ID:Clang>:-ftemplate-backtrace-limit=0 -fconstexpr-backtrace-limit=0>
+        $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wall -Wextra -Wpedantic -Werror>)
+
 catch_discover_tests(any_test)
