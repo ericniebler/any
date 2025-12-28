@@ -9,4 +9,5 @@ function(add_example)
 endfunction()
 
 add_example(basic)
+add_example(comparable)
 add_example(function)
