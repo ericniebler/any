@@ -24,12 +24,20 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 // type_info and ANY_TYPEID
 
-namespace any
-{
 #define ANY_TYPEID(...) ::any::typeid_of<__VA_ARGS__>
 
+namespace any
+{
 namespace _detail
 {
+#if ANY_HAS_TYPEID
+using std_type_info = std::type_info;
+#else
+struct std_type_info
+{
+};
+#endif
+
 //////////////////////////////////////////////////////////////////////////////////////////
 // _pretty_name
 template <class>
@@ -50,8 +58,8 @@ constexpr std::string_view _find_pretty_name(std::string_view fun_name) noexcept
   auto const beg_pos = fun_name.find(_type_name_prefix);
   auto const end_pos = fun_name.rfind(_type_name_suffix);
 
-  auto const start  = beg_pos + sizeof(_type_name_prefix) - 1;
-  auto const length = end_pos - start;
+  auto const start   = beg_pos + sizeof(_type_name_prefix) - 1;
+  auto const length  = end_pos - start;
 
   return fun_name.substr(start, length);
 }
@@ -83,8 +91,9 @@ struct type_info
   type_info(type_info &&)            = delete;
   type_info &operator=(type_info &&) = delete;
 
-  constexpr explicit type_info(std::string_view name) noexcept
-    : name_(name)
+  constexpr explicit type_info(std::string_view name,
+                               _detail::std_type_info const *type = nullptr) noexcept
+    : name_(name), type_(type)
   {
   }
 
@@ -96,12 +105,25 @@ struct type_info
   auto operator==(type_info const &) const noexcept -> bool                  = default;
   auto operator<=>(type_info const &) const noexcept -> std::strong_ordering = default;
 
+#if ANY_HAS_TYPEID
+  auto operator==(std::type_info const &other) const noexcept -> bool
+  {
+    return *type_ == other;
+  }
+#endif
+
 private:
   std::string_view name_;
+  _detail::std_type_info const *type_;
 };
 
+#if ANY_HAS_TYPEID
+template <class T>
+inline constexpr type_info typeid_of{_detail::_pretty_name<T>, &typeid(T)};
+#else
 template <class T>
 inline constexpr type_info typeid_of{_detail::_pretty_name<T>};
+#endif
 
 template <class T>
 inline constexpr type_info const &typeid_of<T const> = typeid_of<T>;

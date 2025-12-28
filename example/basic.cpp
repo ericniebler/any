@@ -85,6 +85,5 @@ int main()
   assert(any::data(a) == any::data(*p));
   p->fn2();
 
-  any::iabstract<ibase2> *ptr = &*p;
-  std::printf("%s\n", typeid(*ptr).name());
+  [[maybe_unused]] any::iabstract<ibase2> *ptr = &*p;
 }
