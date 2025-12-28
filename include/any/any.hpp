@@ -570,9 +570,9 @@ struct interface : Base
     {
       ANY_ASSERT(!empty(*this));
       if (is_const)
-        value(*this)._indirect_bind(out, true);
+        value(*this)._indirect_bind(out);
       else
-        value(::any::_unconst(*this))._indirect_bind(out, false);
+        value(::any::_unconst(*this))._indirect_bind(out);
     }
   }
 };
