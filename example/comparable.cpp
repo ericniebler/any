@@ -45,6 +45,8 @@ private:
     if (type != ::any::type(*other))
       return false;
 
+    // ANY_TYPEID is a portable replacement for typeid, useful when RTTI is disabled
+    // (e.g., with -fno-rtti).
     if (type == ANY_TYPEID(void))
       return true;
 
