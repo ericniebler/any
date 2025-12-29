@@ -4,10 +4,14 @@ function(add_example)
 
     target_compile_options(
             ${ARGV0} PRIVATE
-            $<$<CXX_COMPILER_ID:Clang>:-ftemplate-backtrace-limit=0 -fconstexpr-backtrace-limit=0 -Winfinite-recursion>
+            $<$<CXX_COMPILER_ID:Clang>:-ftemplate-backtrace-limit=0 -fconstexpr-backtrace-limit=0>
             $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wall -Wextra -Wpedantic>)
 endfunction()
 
 add_example(basic)
 add_example(comparable)
 add_example(function)
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scratch.cpp")
+    add_example(scratch)
+endif()
