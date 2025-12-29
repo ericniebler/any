@@ -1,0 +1,6 @@
+
+# Tweak the clangd parse settings for all files
+CompileFlags:
+  CompilationDatabase: .
+  Add:
+    - "-std=c++2b"

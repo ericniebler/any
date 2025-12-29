@@ -188,9 +188,9 @@ inline constexpr Interface<Base> const &interface_cast(Interface<Base> const &if
 {
   template <class T>
   [[ANY_ALWAYS_INLINE, nodiscard]]
-  inline constexpr auto &operator()(T &t) const noexcept
+  inline constexpr auto &operator()(T &&t) const noexcept
   {
-    return t._value();
+    return std::forward<T>(t)._value();
   }
 } value{};
 
@@ -408,13 +408,14 @@ struct _value_proxy_model : Interface<_mcall<_bases_of<Interface>, _value_proxy_
 };
 
 // reference
-template <template <class> class Interface, class Value>
+template <template <class> class Interface, class CvValue>
 struct _reference_root;
 
-template <template <class> class Interface, class Value>
-struct _reference_model : Interface<_mcall<_bases_of<Interface>, _reference_root<Interface, Value>>>
+template <template <class> class Interface, class CvValue>
+struct _reference_model
+  : Interface<_mcall<_bases_of<Interface>, _reference_root<Interface, CvValue>>>
 {
-  using _base_t = Interface<_mcall<_bases_of<Interface>, _reference_root<Interface, Value>>>;
+  using _base_t = Interface<_mcall<_bases_of<Interface>, _reference_root<Interface, CvValue>>>;
   using _base_t::_base_t;
 };
 
@@ -448,17 +449,17 @@ concept _has_box_kind = std::remove_reference_t<Interface>::_box_kind == BoxKind
 
 // Without the check against _has_box_kind, this concept would always be
 // satisfied when building an object model or a proxy model because of the
-// abstract implementation of BaseInterface in the iabstract layer.
+// abstract implementation of Interface in the iabstract layer.
 //
 // any<Derived>
 //   : _value_proxy_model<Derived, V>
-//       : Derived<Base<_value_proxy_root<Derived, V>>>    // box_kind == object
-//         ^^^^^^^        : Derived<Base<_iroot>>         // box_kind ==
-//         abstract
+//       : Derived<Base<_value_proxy_root<Derived, V>>>    // box_kind == proxy
+//         ^^^^^^^        : Derived<Base<_iroot>>          // box_kind == abstract
 //                          ^^^^^^^
-template <class Interface, template <class> class BaseInterface>
-concept _already_implements = requires(Interface const &iface) {
-  { ::any::interface_cast<BaseInterface>(iface) } -> _has_box_kind<Interface::_box_kind>;
+
+template <class Derived, template <class> class Interface>
+concept _already_implements = requires(Derived const &iface) {
+  { ::any::interface_cast<Interface>(iface) } -> _has_box_kind<Derived::_box_kind>;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -485,8 +486,8 @@ constexpr char const *_pure_virt_msg = "internal error: pure virtual %s() called
 // If we are slicing into a buffer that is smaller than our own, then slicing
 // may throw.
 template <class Interface, class Base, size_t BufferSize>
-concept _nothrow_slice = (Base::_root_kind == _root_kind::_value)
-                      && (Base::_box_kind != _box_kind::_abstract)
+concept _nothrow_slice = (Base::_box_kind != _box_kind::_abstract)
+                      && (Base::_root_kind == _root_kind::_value)
                       && (Interface::buffer_size >= BufferSize);
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -508,72 +509,43 @@ struct interface : Base
 
   static constexpr bool _nothrow_slice = ::any::_nothrow_slice<_interface_type, Base, buffer_size>;
 
-  constexpr ~interface()               = default;
-
-  [[ANY_ALWAYS_INLINE, nodiscard]]
-  inline constexpr auto &_value() noexcept
-  {
-    if constexpr (Base::_box_kind == _box_kind::_abstract)
-      return ::any::_die<_interface_type &>(_pure_virt_msg, "value");
-    else
-      return Base::_value();
-  }
-
-  [[ANY_ALWAYS_INLINE, nodiscard]]
-  inline constexpr auto const &_value() const noexcept
-  {
-    if constexpr (Base::_box_kind == _box_kind::_abstract)
-      return ::any::_die<_interface_type const &>(_pure_virt_msg, "value");
-    else
-      return Base::_value();
-  }
-
-  //! @pre Base::_box_kind != _box_kind::_proxy || !empty(*this)
+  //! @pre !empty(*this)
   constexpr virtual void _slice_to(_value_proxy_root<Interface> &out) noexcept(_nothrow_slice)
   {
-    if constexpr (Base::_box_kind == _box_kind::_abstract)
+    ANY_ASSERT(!empty(*this));
+    if constexpr (Base::_box_kind == _box_kind::_object)
     {
-      ::any::_die(_pure_virt_msg, "slice");
-    }
-    else if constexpr (Base::_box_kind == _box_kind::_object)
-    {
+      // BUGBUG find out why this makes clang sad:
+      // if constexpr (Base::_root_kind == _root_kind::_reference)
+      //   out.emplace(value(*this)); // potentially throwing
+      // else
       out.emplace(std::move(value(*this))); // potentially throwing
     }
-    else
+    else if constexpr (Base::_box_kind == _box_kind::_proxy)
     {
       value(*this)._slice_to(out);
       reset(*this);
     }
   }
 
-  [[ANY_ALWAYS_INLINE]]
-  inline constexpr void _indirect_bind(_reference_proxy_root<Interface> &out) noexcept
+  //! @pre !empty(*this)
+  constexpr virtual void _indirect_bind(_reference_proxy_root<Interface> &out) noexcept
   {
-    return std::as_const(*this)._indirect_bind(out, false);
+    ANY_ASSERT(!empty(*this));
+    if constexpr (Base::_box_kind == _box_kind::_object)
+      out._value_bind(value(*this));
+    else if constexpr (Base::_box_kind == _box_kind::_proxy)
+      value(*this)._indirect_bind(out);
   }
 
-  constexpr virtual void _indirect_bind(_reference_proxy_root<Interface> &out,
-                                        bool is_const = true) const noexcept
+  //! @pre !empty(*this)
+  constexpr virtual void _indirect_bind(_reference_proxy_root<Interface> &out) const noexcept
   {
-    if constexpr (Base::_box_kind == _box_kind::_abstract)
-    {
-      ::any::_die(_pure_virt_msg, "bind");
-    }
-    else if constexpr (Base::_box_kind == _box_kind::_object)
-    {
-      if (is_const)
-        out._direct_bind(value(*this));
-      else
-        out._direct_bind(value(::any::_unconst(*this)));
-    }
-    else
-    {
-      ANY_ASSERT(!empty(*this));
-      if (is_const)
-        value(*this)._indirect_bind(out);
-      else
-        value(::any::_unconst(*this))._indirect_bind(out);
-    }
+    ANY_ASSERT(!empty(*this));
+    if constexpr (Base::_box_kind == _box_kind::_object)
+      out._value_bind(value(*this));
+    else if constexpr (Base::_box_kind == _box_kind::_proxy)
+      value(*this)._indirect_bind(out);
   }
 };
 
@@ -581,13 +553,18 @@ struct interface : Base
 // _iroot
 struct _iroot
 {
-  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_abstract;
-  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
-  static constexpr size_t buffer_size           = sizeof(_tagged_ptr); // minimum size
-  using bases_type                              = extends<>;
+  static constexpr ::any::_box_kind _box_kind = ::any::_box_kind::_abstract;
+  static constexpr size_t buffer_size         = sizeof(_tagged_ptr); // minimum size
+  using bases_type                            = extends<>;
 
   // needed by MSVC for EBO to work for some reason:
   constexpr virtual ~_iroot() = default;
+
+  template <class Self>
+  constexpr Self &&_value(this Self &&) noexcept
+  {
+    return ::any::_die<Self &&>(_pure_virt_msg, "value");
+  }
 
   [[nodiscard]]
   constexpr virtual bool _empty() const noexcept
@@ -612,7 +589,7 @@ struct _iroot
     return ::any::_die<void *>(_pure_virt_msg, "data");
   }
 
-  void _slice_to() noexcept               = delete;
+  void _slice_to() noexcept            = delete;
   void _indirect_bind() const noexcept = delete;
 };
 
@@ -621,24 +598,20 @@ struct _iroot
 template <template <class> class Interface, class Value>
 struct _value_root : iabstract<Interface>
 {
-  using interface_type                        = iabstract<Interface>;
-  static constexpr ::any::_box_kind _box_kind = ::any::_box_kind::_object;
+  using interface_type                          = iabstract<Interface>;
+  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
+  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
 
   constexpr explicit _value_root(Value val) noexcept
     : value(std::move(val))
   {
   }
 
+  template <class Self>
   [[nodiscard]]
-  constexpr Value &_value() noexcept
+  constexpr auto &&_value(this Self &&self) noexcept
   {
-    return value;
-  }
-
-  [[nodiscard]]
-  constexpr Value const &_value() const noexcept
-  {
-    return value;
+    return static_cast<Self &&>(self).value;
   }
 
   [[nodiscard]]
@@ -675,24 +648,20 @@ struct [[ANY_EMPTY_BASES]] _value_root<Interface, Value>
   : iabstract<Interface>
   , private Value
 {
-  using interface_type                        = iabstract<Interface>;
-  static constexpr ::any::_box_kind _box_kind = ::any::_box_kind::_object;
+  using interface_type                          = iabstract<Interface>;
+  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
+  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
 
   constexpr explicit _value_root(Value val) noexcept
     : Value(std::move(val))
   {
   }
 
+  template <class Self>
   [[nodiscard]]
-  constexpr Value &_value() noexcept
+  constexpr auto &&_value(this Self &&self) noexcept
   {
-    return *this;
-  }
-
-  [[nodiscard]]
-  constexpr Value const &_value() const noexcept
-  {
-    return *this;
+    return static_cast<_copy_cvref_t<Self, Value> &&>(self);
   }
 
   [[nodiscard]]
@@ -727,11 +696,12 @@ struct [[ANY_EMPTY_BASES]] _value_root<Interface, Value>
 template <template <class> class Interface>
 struct _value_proxy_root : iabstract<Interface>
 {
-  using interface_type                        = iabstract<Interface>;
-  static constexpr ::any::_box_kind _box_kind = ::any::_box_kind::_proxy;
+  using interface_type                          = iabstract<Interface>;
+  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_proxy;
+  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
 
-  static constexpr bool _movable              = extension_of<iabstract<Interface>, imovable>;
-  static constexpr bool _copyable             = extension_of<iabstract<Interface>, icopyable>;
+  static constexpr bool _movable                = extension_of<iabstract<Interface>, imovable>;
+  static constexpr bool _copyable               = extension_of<iabstract<Interface>, icopyable>;
 
   [[ANY_ALWAYS_INLINE]]
   inline constexpr _value_proxy_root() noexcept
@@ -845,35 +815,25 @@ struct _value_proxy_root : iabstract<Interface>
     return _emplace<Value>(std::forward<CvRefValue>(value));
   }
 
+  template <class Self>
   [[nodiscard]]
-  constexpr iabstract<Interface> &_value() noexcept
+  constexpr auto &&_value(this Self &&self) noexcept
   {
+    using root_ptr_t      = std::add_pointer_t<_copy_cvref_t<Self, _iroot>>;
+    using interface_ref_t = _copy_cvref_t<Self, iabstract<Interface>>;
+    using interface_ptr_t = std::add_pointer_t<interface_ref_t>;
     if ANY_CONSTEVAL
     {
-      return *::any::_polymorphic_downcast<iabstract<Interface> *>(pointer);
+      return static_cast<interface_ref_t &&>(
+          *::any::_polymorphic_downcast<interface_ptr_t>(self.pointer));
     }
     else
     {
-      auto const ptr = *::any::start_lifetime_as<_tagged_ptr>(buffer);
+      auto const ptr = *::any::start_lifetime_as<_tagged_ptr>(self.buffer);
       ANY_ASSERT(ptr != nullptr);
-      auto *root_ptr = static_cast<_iroot *>(ptr._is_vptr() ? buffer : ptr._get());
-      return *::any::_polymorphic_downcast<iabstract<Interface> *>(root_ptr);
-    }
-  }
-
-  [[nodiscard]]
-  constexpr iabstract<Interface> const &_value() const noexcept
-  {
-    if ANY_CONSTEVAL
-    {
-      return *::any::_polymorphic_downcast<iabstract<Interface> const *>(pointer);
-    }
-    else
-    {
-      auto const ptr = *::any::start_lifetime_as<_tagged_ptr>(buffer);
-      ANY_ASSERT(ptr != nullptr);
-      auto *root_ptr = static_cast<_iroot const *>(ptr._is_vptr() ? buffer : ptr._get());
-      return *::any::_polymorphic_downcast<iabstract<Interface> const *>(root_ptr);
+      auto *root_ptr = static_cast<root_ptr_t>(ptr._is_vptr() ? self.buffer : ptr._get());
+      return static_cast<interface_ref_t &&>(
+          *::any::_polymorphic_downcast<interface_ptr_t>(root_ptr));
     }
   }
 
@@ -959,16 +919,14 @@ struct _reference_root : iabstract<Interface>
   {
   }
 
+  template <class Self>
   [[nodiscard]]
-  constexpr auto &_value() noexcept
+  constexpr auto &&_value(this Self &&self) noexcept
   {
-    return ::any::_unconst(*value_);
-  }
-
-  [[nodiscard]]
-  constexpr auto &_value() const noexcept
-  {
-    return *value_;
+    using result_t = _copy_cvref_t<Self, std::remove_cv_t<CvValue>>;
+    ANY_ASSERT((std::convertible_to<CvValue &, result_t &>)
+               && "attempt to get a mutable reference from a const reference");
+    return static_cast<result_t &&>(const_cast<result_t &>(*self.value_));
   }
 
   [[nodiscard]]
@@ -1057,73 +1015,61 @@ struct _reference_proxy_root : iabstract<Interface>
     }
   }
 
-  template <class CvProxy>
-  constexpr void _proxy_bind(CvProxy &proxy) noexcept
+  template <extension_of<Interface> CvModel>
+  constexpr void _model_bind(CvModel &model) noexcept
   {
-    static_assert(extension_of<CvProxy, Interface>, "CvProxy must implement Interface");
-    //! @c other should refer to a value model
-    static_assert(CvProxy::_root_kind == _root_kind::_value,
-                  "CvDerived should not be a reference model");
+    static_assert(extension_of<CvModel, Interface>, "CvModel must implement Interface");
     if ANY_CONSTEVAL
     {
-      proxy._indirect_bind(*this);
+      model._indirect_bind(*this);
     }
     else
     {
-      if (std::derived_from<CvProxy, iabstract<Interface>>)
+      if constexpr (std::derived_from<CvModel, iabstract<Interface>>)
       {
         //! Optimize for when Base derives from iabstract<Interface>. Store the
         //! address of value(other) directly in out as a tagged ptr instead of
         //! introducing an indirection.
         //! @post _is_vptr() == false
         auto &ptr = *::any::start_lifetime_as<_tagged_ptr>(buffer);
-        ptr       = static_cast<iabstract<Interface> *>(std::addressof(::any::_unconst(proxy)));
+        ptr       = static_cast<iabstract<Interface> *>(std::addressof(::any::_unconst(model)));
       }
       else
       {
+        static_assert(std::derived_from<CvModel, iabstract<Interface>>);
         //! @post _is_vptr() == true
-        proxy._indirect_bind(*this);
+        model._indirect_bind(*this);
       }
     }
   }
 
   template <class CvValue>
-  constexpr void _direct_bind(CvValue &value) noexcept
+  constexpr void _value_bind(CvValue &value) noexcept
   {
     static_assert(!extension_of<CvValue, Interface>);
     using model_type = _reference_model<Interface, CvValue>;
     ::any::_emplace_into<model_type>(pointer, buffer, value);
   }
 
+  template <class Self>
   [[nodiscard]]
-  constexpr iabstract<Interface> &_value() noexcept
+  constexpr auto &&_value(this Self &&self) noexcept
   {
+    using root_ptr_t      = std::add_pointer_t<_copy_cvref_t<Self, _iroot>>;
+    using interface_ref_t = _copy_cvref_t<Self, iabstract<Interface>>;
+    using interface_ptr_t = std::add_pointer_t<interface_ref_t>;
     if ANY_CONSTEVAL
     {
-      return *::any::_polymorphic_downcast<iabstract<Interface> *>(pointer);
+      return static_cast<interface_ref_t &&>(
+          *::any::_polymorphic_downcast<interface_ptr_t>(self.pointer));
     }
     else
     {
-      ANY_ASSERT(!_empty());
-      auto const ptr       = *::any::start_lifetime_as<_tagged_ptr>(buffer);
-      auto *const root_ptr = static_cast<_iroot *>(ptr._is_vptr() ? buffer : ptr._get());
-      return *::any::_polymorphic_downcast<iabstract<Interface> *>(root_ptr);
-    }
-  }
-
-  [[nodiscard]]
-  constexpr iabstract<Interface> const &_value() const noexcept
-  {
-    if ANY_CONSTEVAL
-    {
-      return *::any::_polymorphic_downcast<iabstract<Interface> const *>(pointer);
-    }
-    else
-    {
-      ANY_ASSERT(!_empty());
-      auto const ptr       = *::any::start_lifetime_as<_tagged_ptr>(buffer);
-      auto *const root_ptr = static_cast<_iroot const *>(ptr._is_vptr() ? buffer : ptr._get());
-      return *::any::_polymorphic_downcast<iabstract<Interface> const *>(root_ptr);
+      ANY_ASSERT(!empty(self));
+      auto const ptr       = *::any::start_lifetime_as<_tagged_ptr>(self.buffer);
+      auto *const root_ptr = static_cast<root_ptr_t>(ptr._is_vptr() ? self.buffer : ptr._get());
+      return static_cast<interface_ref_t &&>(
+          *::any::_polymorphic_downcast<interface_ptr_t>(root_ptr));
     }
   }
 
@@ -1613,10 +1559,11 @@ private:
 
     if (proxy_ptr == nullptr || empty(*proxy_ptr))
       return;
-    // Optimize for when CvProxy derives from iabstract<Interface>. Store the address of
-    // value(other) directly in out as a tagged ptr instead of introducing an indirection.
+    // Optimize for when CvValueProxy derives from iabstract<Interface>. Store the address
+    // of value(other) directly in out as a tagged ptr instead of introducing an
+    // indirection.
     else if constexpr (std::derived_from<CvValueProxy, iabstract<Interface>>)
-      ref_._proxy_bind(::any::_as_const_if<is_const>(value(*proxy_ptr)));
+      ref_._model_bind(::any::_as_const_if<is_const>(value(*proxy_ptr)));
     else
       value(*proxy_ptr)._indirect_bind(ref_);
   }
@@ -1642,14 +1589,14 @@ private:
     else if ((*proxy_ptr)._is_indirect())
       value(*proxy_ptr)._indirect_bind(ref_);
     else
-      ref_._proxy_bind(::any::_as_const_if<is_const>(value(*proxy_ptr)));
+      ref_._model_bind(::any::_as_const_if<is_const>(value(*proxy_ptr)));
   }
 
   template <class CvValue>
   constexpr void _value_assign(CvValue *value_ptr) noexcept
   {
     if (value_ptr != nullptr)
-      ref_._direct_bind(*value_ptr);
+      ref_._value_bind(*value_ptr);
   }
 
   // the proxy model is mutable so that a const any_ptr can return non-const
@@ -1660,7 +1607,7 @@ private:
 //////////////////////////////////////////////////////////////////////////////////////////
 // any_ptr
 template <template <class> class Interface>
-struct any_ptr final : _any_ptr_base<Interface>
+struct any_ptr : _any_ptr_base<Interface>
 {
   using _any_ptr_base<Interface>::_any_ptr_base;
   using _any_ptr_base<Interface>::operator=;
@@ -1726,7 +1673,7 @@ any_ptr(Interface<Base> *) -> any_ptr<Interface>;
 //////////////////////////////////////////////////////////////////////////////////////////
 // any_const_ptr
 template <template <class> class Interface>
-struct any_const_ptr final : _any_ptr_base<Interface>
+struct any_const_ptr : _any_ptr_base<Interface>
 {
   using _any_ptr_base<Interface>::_any_ptr_base;
   using _any_ptr_base<Interface>::operator=;

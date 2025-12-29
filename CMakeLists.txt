@@ -13,7 +13,7 @@ include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
 
 # any library
 add_library(any INTERFACE)
-target_compile_features(any INTERFACE cxx_std_20)
+target_compile_features(any INTERFACE cxx_std_23)
 target_include_directories(any INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # tests

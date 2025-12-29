@@ -92,6 +92,9 @@ concept _decays_to = std::same_as<std::decay_t<T>, U>;
 template <class T>
 concept _decayed = _decays_to<T, T>;
 
+template <class...>
+struct _undef;
+
 template <class Fn, class... Args>
 using _mcall = Fn::template call<Args...>;
 
@@ -111,6 +114,32 @@ struct _if_<false>
 
 template <bool Condition, class Then = void, class... Else>
 using _if_t = _mcall<_if_<Condition>, Then, Else...>;
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// _copy_cvref_t
+#define ANY_COPY_CVREF(NAME, QUAL)                                                                 \
+  struct NAME                                                                                      \
+  {                                                                                                \
+    template <class T>                                                                             \
+    using call = T QUAL;                                                                           \
+  };                                                                                               \
+  template <class T>                                                                               \
+  extern NAME _copy_cvref_fn<T QUAL, 0>
+
+template <class T, int = 0>
+extern _undef<T> _copy_cvref_fn;
+
+ANY_COPY_CVREF(_cp, );
+ANY_COPY_CVREF(_cpl, &);
+ANY_COPY_CVREF(_cpr, &&);
+ANY_COPY_CVREF(_cpc, const);
+ANY_COPY_CVREF(_cpcl, const &);
+ANY_COPY_CVREF(_cpcr, const &&);
+
+template <class From, class To>
+using _copy_cvref_t = _mcall<decltype(_copy_cvref_fn<From>), To>;
+
+#undef ANY_COPY_CVREF
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _unconst
@@ -133,6 +162,18 @@ template <bool MakeConst, class T>
 inline constexpr auto &_as_const_if(T &t) noexcept
 {
   return const_cast<_const_if<MakeConst, T> &>(t);
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// _move_if
+template <bool Move, class T>
+[[ANY_ALWAYS_INLINE, nodiscard]]
+inline constexpr auto &&_move_if(T &t) noexcept
+{
+  if constexpr (Move)
+    return std::move(t);
+  else
+    return t;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
