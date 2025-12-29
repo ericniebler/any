@@ -513,18 +513,17 @@ struct interface : Base
   constexpr virtual void _slice_to(_value_proxy_root<Interface> &out) noexcept(_nothrow_slice)
   {
     ANY_ASSERT(!empty(*this));
-    if constexpr (Base::_box_kind == _box_kind::_object)
-    {
-      // BUGBUG find out why this makes clang sad:
-      // if constexpr (Base::_root_kind == _root_kind::_reference)
-      //   out.emplace(value(*this)); // potentially throwing
-      // else
-      out.emplace(std::move(value(*this))); // potentially throwing
-    }
-    else if constexpr (Base::_box_kind == _box_kind::_proxy)
+    if constexpr (Base::_box_kind == _box_kind::_proxy)
     {
       value(*this)._slice_to(out);
       reset(*this);
+    }
+    else if constexpr (Base::_box_kind == _box_kind::_object)
+    {
+      // Move from type-erased values, but not from type-erased references
+      constexpr bool is_value = (Base::_root_kind == _root_kind::_value);
+      auto temp               = ::any::_move_if<is_value>(value(*this));
+      out.emplace(std::move(temp)); // potentially throwing
     }
   }
 
@@ -532,20 +531,20 @@ struct interface : Base
   constexpr virtual void _indirect_bind(_reference_proxy_root<Interface> &out) noexcept
   {
     ANY_ASSERT(!empty(*this));
-    if constexpr (Base::_box_kind == _box_kind::_object)
-      out._value_bind(value(*this));
-    else if constexpr (Base::_box_kind == _box_kind::_proxy)
+    if constexpr (Base::_box_kind == _box_kind::_proxy)
       value(*this)._indirect_bind(out);
+    else if constexpr (Base::_box_kind == _box_kind::_object)
+      out._value_bind(value(*this));
   }
 
   //! @pre !empty(*this)
   constexpr virtual void _indirect_bind(_reference_proxy_root<Interface> &out) const noexcept
   {
     ANY_ASSERT(!empty(*this));
-    if constexpr (Base::_box_kind == _box_kind::_object)
-      out._value_bind(value(*this));
-    else if constexpr (Base::_box_kind == _box_kind::_proxy)
+    if constexpr (Base::_box_kind == _box_kind::_proxy)
       value(*this)._indirect_bind(out);
+    else if constexpr (Base::_box_kind == _box_kind::_object)
+      out._value_bind(value(*this));
   }
 };
 
