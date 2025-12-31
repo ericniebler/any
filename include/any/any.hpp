@@ -593,16 +593,12 @@ struct _iroot
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// _value_root
+// _box
 template <template <class> class Interface, class Value>
-struct _value_root : iabstract<Interface>
+struct _box : iabstract<Interface>
 {
-  using interface_type                          = iabstract<Interface>;
-  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
-  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
-
-  constexpr explicit _value_root(Value val) noexcept
-    : value(std::move(val))
+  constexpr explicit _box(Value &&value) noexcept
+    : value_(std::move(value))
   {
   }
 
@@ -610,7 +606,45 @@ struct _value_root : iabstract<Interface>
   [[nodiscard]]
   constexpr auto &&_value(this Self &&self) noexcept
   {
-    return static_cast<Self &&>(self).value;
+    return static_cast<Self &&>(self).value_;
+  }
+
+private:
+  Value value_;
+};
+
+// A specialization of _box to take advantage of EBO (empty base optimization):
+template <template <class> class Interface, class Value>
+  requires std::is_empty_v<Value> && (!std::is_final_v<Value>)
+struct [[ANY_EMPTY_BASES]] _box<Interface, Value>
+  : iabstract<Interface>
+  , private Value
+{
+  constexpr explicit _box(Value &&value) noexcept
+    : Value(std::move(value))
+  {
+  }
+
+  template <class Self>
+  [[nodiscard]]
+  constexpr auto &&_value(this Self &&self) noexcept
+  {
+    return std::forward<_copy_cvref_t<Self, Value>>(self);
+  }
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// _value_root
+template <template <class> class Interface, class Value>
+struct _value_root : _box<Interface, Value>
+{
+  using interface_type                          = iabstract<Interface>;
+  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
+  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
+
+  constexpr explicit _value_root(Value value) noexcept
+    : _box<Interface, Value>(std::move(value))
+  {
   }
 
   [[nodiscard]]
@@ -633,60 +667,7 @@ struct _value_root : iabstract<Interface>
   [[nodiscard]]
   constexpr void *_data() const noexcept final override
   {
-    return const_cast<void *>(static_cast<void const *>(std::addressof(_value())));
-  }
-
-  Value value;
-};
-
-// A specialization of _value_root to take advantage of EBO (empty base
-// optimization):
-template <template <class> class Interface, class Value>
-  requires std::is_empty_v<Value> && (!std::is_final_v<Value>)
-struct [[ANY_EMPTY_BASES]] _value_root<Interface, Value>
-  : iabstract<Interface>
-  , private Value
-{
-  using interface_type                          = iabstract<Interface>;
-  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
-  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
-
-  constexpr explicit _value_root(Value val) noexcept
-    : Value(std::move(val))
-  {
-  }
-
-  template <class Self>
-  [[nodiscard]]
-  constexpr auto &&_value(this Self &&self) noexcept
-  {
-    return static_cast<_copy_cvref_t<Self, Value> &&>(self);
-  }
-
-  [[nodiscard]]
-  constexpr bool _empty() const noexcept final override
-  {
-    return false;
-  }
-
-  constexpr void _reset() noexcept final override
-  {
-    if ANY_CONSTEVAL
-    {
-      delete this;
-    }
-  }
-
-  [[nodiscard]]
-  constexpr type_info const &_type() const noexcept final override
-  {
-    return ANY_TYPEID(Value);
-  }
-
-  [[nodiscard]]
-  constexpr void *_data() const noexcept final override
-  {
-    return const_cast<void *>(static_cast<void const *>(std::addressof(_value())));
+    return const_cast<void *>(static_cast<void const *>(std::addressof(value(*this))));
   }
 };
 
@@ -1035,7 +1016,6 @@ struct _reference_proxy_root : iabstract<Interface>
       }
       else
       {
-        static_assert(std::derived_from<CvModel, iabstract<Interface>>);
         //! @post _is_vptr() == true
         model._indirect_bind(*this);
       }
@@ -1201,10 +1181,9 @@ private:
   {
     static_assert(CvProxy::_box_kind == _box_kind::_proxy, "CvProxy must be a proxy type.");
     static_assert(!extension_of<Value, Interface>, "Cannot dynamic cast to an Interface type.");
-    constexpr bool is_const = std::is_const_v<CvProxy>;
-    using value_model       = _const_if<is_const, _value_root<Interface, Value>>;
-    using referant_type     = _const_if<is_const, Value>;
-    using reference_model   = _const_if<is_const, _reference_root<Interface, referant_type>>;
+    using value_model     = _copy_cvref_t<CvProxy, _value_root<Interface, Value>>;
+    using referant_type   = _copy_cvref_t<CvProxy, Value>;
+    using reference_model = _copy_cvref_t<CvProxy, _reference_root<Interface, referant_type>>;
 
     // get the address of the model from the proxy:
     auto *model_ptr = std::addressof(value(*proxy_ptr));

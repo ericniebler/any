@@ -151,17 +151,15 @@ inline constexpr T &_unconst(T const &t) noexcept
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// _const_if
-template <bool MakeConst, class T>
-using _const_if = _if_t<MakeConst, T const, T>;
-
-//////////////////////////////////////////////////////////////////////////////////////////
 // _as_const_if
-template <bool MakeConst, class T>
+template <bool Const, class T>
 [[ANY_ALWAYS_INLINE, nodiscard]]
 inline constexpr auto &_as_const_if(T &t) noexcept
 {
-  return const_cast<_const_if<MakeConst, T> &>(t);
+  if constexpr (Const)
+    return const_cast<T const &>(t);
+  else
+    return t;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -183,7 +181,7 @@ template <class ResultPtr, class CvInterface>
 inline constexpr auto *_polymorphic_downcast(CvInterface *from) noexcept
 {
   static_assert(std::is_pointer_v<ResultPtr>);
-  using value_type = _const_if<std::is_const_v<CvInterface>, std::remove_pointer_t<ResultPtr>>;
+  using value_type = _copy_cvref_t<CvInterface, std::remove_pointer_t<ResultPtr>>;
   static_assert(std::derived_from<value_type, CvInterface>,
                 "_polymorphic_downcast requires From to be a base class of To");
 
