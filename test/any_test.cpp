@@ -146,7 +146,7 @@ void test_deadly_diamond_of_death()
   m.baz();
 }
 
-static_assert(any::iabstract<ifoo>::buffer_size < any::iabstract<ibaz>::buffer_size);
+static_assert(any::iabstract<ifoo>::_buffer_size < any::iabstract<ibaz>::_buffer_size);
 
 // test constant evaluation works
 consteval void test_consteval()
@@ -177,7 +177,7 @@ TEST_CASE("basic usage", "[any]")
 #endif
 
   any::any<ibaz> m(foobar{});
-  REQUIRE(m._in_situ());
+  REQUIRE(m._in_situ_());
   REQUIRE(any::type(m) == ANY_TYPEID(foobar));
 
   m.foo();
