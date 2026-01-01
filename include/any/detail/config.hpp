@@ -113,16 +113,10 @@
 #  define ANY_PRETTY_FUNCTION __PRETTY_FUNCTION__
 #endif
 
-#if __cpp_if_consteval
-#  define ANY_CONSTEVAL consteval
-#else
-#  define ANY_CONSTEVAL (std::is_constant_evaluated())
-#endif
-
 #define ANY_ASSERT(...)                                                                            \
   do                                                                                               \
   {                                                                                                \
-    if ANY_CONSTEVAL                                                                               \
+    if consteval                                                                                   \
     {                                                                                              \
       if (!(__VA_ARGS__))                                                                          \
         ::any::_die(ANY_PP_STRINGIZE(__VA_ARGS__));                                                \

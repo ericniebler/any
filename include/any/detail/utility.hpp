@@ -71,7 +71,7 @@ template <class Return = void>
 [[noreturn]]
 inline constexpr Return _die(char const *msg, ...) noexcept
 {
-  if ANY_CONSTEVAL
+  if consteval
   {
     ::any::unreachable();
   }
@@ -186,7 +186,10 @@ inline constexpr auto *_polymorphic_downcast(CvInterface *from) noexcept
                 "_polymorphic_downcast requires From to be a base class of To");
 
 #if __cpp_rtti
-  ANY_ASSERT(dynamic_cast<value_type *>(from) != nullptr);
+  if !consteval
+  {
+    ANY_ASSERT(dynamic_cast<value_type *>(from) != nullptr);
+  }
 #endif
   return static_cast<value_type *>(from);
 }
