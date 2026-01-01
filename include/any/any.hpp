@@ -196,77 +196,88 @@ inline constexpr Interface<Base> const &interface_cast(Interface<Base> const &if
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // accessors
-[[maybe_unused]] constexpr struct _value_t
+struct _access
 {
-  template <class T>
-  [[ANY_ALWAYS_INLINE, nodiscard]]
-  inline constexpr auto &operator()(T &&t) const noexcept
+  struct _value_t
   {
-    return std::forward<T>(t)._value_();
-  }
-} value{};
+    template <class T>
+    [[ANY_ALWAYS_INLINE, nodiscard]]
+    inline constexpr auto &operator()(T &&t) const noexcept
+    {
+      return std::forward<T>(t)._value_();
+    }
+  };
 
-[[maybe_unused]] constexpr struct _empty_t
-{
-  template <class T>
-  [[ANY_ALWAYS_INLINE, nodiscard]]
-  inline constexpr bool operator()(T const &t) const noexcept
+  struct _empty_t
   {
-    return t._empty_();
-  }
-} empty{};
+    template <class T>
+    [[ANY_ALWAYS_INLINE, nodiscard]]
+    inline constexpr bool operator()(T const &t) const noexcept
+    {
+      return t._empty_();
+    }
+  };
 
-[[maybe_unused]] constexpr struct _reset_t
-{
-  template <class T>
-  [[ANY_ALWAYS_INLINE]]
-  inline constexpr void operator()(T &t) const noexcept
+  struct _reset_t
   {
-    t._reset_();
-  }
-} reset{};
+    template <class T>
+    [[ANY_ALWAYS_INLINE]]
+    inline constexpr void operator()(T &t) const noexcept
+    {
+      t._reset_();
+    }
+  };
 
-[[maybe_unused]] constexpr struct _type_t
-{
-  template <class T>
-  [[ANY_ALWAYS_INLINE, nodiscard]]
-  inline constexpr type_info const &operator()(T const &t) const noexcept
+  struct _type_t
   {
-    return t._type_();
-  }
-} type{};
+    template <class T>
+    [[ANY_ALWAYS_INLINE, nodiscard]]
+    inline constexpr type_info const &operator()(T const &t) const noexcept
+    {
+      return t._type_();
+    }
+  };
 
-[[maybe_unused]] constexpr struct _data_t
-{
-  template <class T>
-  [[ANY_ALWAYS_INLINE, nodiscard]]
-  inline constexpr auto *operator()(T &t) const noexcept
+  struct _data_t
   {
-    return t._data_();
-  }
-} data{};
+    template <class T>
+    [[ANY_ALWAYS_INLINE, nodiscard]]
+    inline constexpr auto *operator()(T &t) const noexcept
+    {
+      return t._data_();
+    }
+  };
 
-[[maybe_unused]] constexpr struct caddressof_t
-{
-  template <template <class> class Interface, class Base>
-  [[nodiscard]]
-  constexpr auto operator()(Interface<Base> const &iface) const noexcept
+  struct caddressof_t
   {
-    return any_const_ptr<Interface>(std::addressof(iface));
-  }
-} caddressof{};
+    template <template <class> class Interface, class Base>
+    [[nodiscard]]
+    constexpr auto operator()(Interface<Base> const &iface) const noexcept
+    {
+      return any_const_ptr<Interface>(std::addressof(iface));
+    }
+  };
 
-[[maybe_unused]] constexpr struct addressof_t : caddressof_t
-{
-  using caddressof_t::operator();
-
-  template <template <class> class Interface, class Base>
-  [[nodiscard]]
-  constexpr auto operator()(Interface<Base> &iface) const noexcept
+  struct addressof_t : caddressof_t
   {
-    return any_ptr<Interface>(std::addressof(iface));
-  }
-} addressof{};
+    using caddressof_t::operator();
+
+    template <template <class> class Interface, class Base>
+    [[nodiscard]]
+    constexpr auto operator()(Interface<Base> &iface) const noexcept
+    {
+      return any_ptr<Interface>(std::addressof(iface));
+    }
+  };
+};
+
+[[maybe_unused]] inline constexpr auto value      = _access::_value_t{};
+[[maybe_unused]] inline constexpr auto empty      = _access::_empty_t{};
+[[maybe_unused]] inline constexpr auto reset      = _access::_reset_t{};
+[[maybe_unused]] inline constexpr auto type       = _access::_type_t{};
+[[maybe_unused]] inline constexpr auto data       = _access::_data_t{};
+[[maybe_unused]] inline constexpr auto addressof  = _access::addressof_t{};
+[[maybe_unused]] inline constexpr auto caddressof = _access::caddressof_t{};
 
 // value_of_t
 template <class T>
@@ -371,11 +382,7 @@ struct _iroot
 private:
   template <template <class> class, class, class, size_t>
   friend struct interface;
-  friend struct _value_t;
-  friend struct _empty_t;
-  friend struct _reset_t;
-  friend struct _type_t;
-  friend struct _data_t;
+  friend struct _access;
 
   template <class Self>
   constexpr Self &&_value_(this Self &&) noexcept
@@ -877,12 +884,7 @@ struct _value_proxy_root : iabstract<Interface>
 private:
   template <template <class> class>
   friend struct any;
-
-  friend struct _value_t;
-  friend struct _empty_t;
-  friend struct _reset_t;
-  friend struct _type_t;
-  friend struct _data_t;
+  friend struct _access;
 
   template <class Value, class... Args>
   constexpr Value &_emplace_(Args &&...args)
