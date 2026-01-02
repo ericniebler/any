@@ -2,7 +2,7 @@
 
 # any
 
-A library for building type-erasing wrappers.
+A C++23 library for building type-erasing wrappers.
 
 ```c++
 #include "any/any.hpp"
