@@ -420,8 +420,8 @@ private:
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _box
-template <template <class> class Interface, class Value>
-struct _box : iabstract<Interface>
+template <class Value>
+struct _box
 {
   constexpr explicit _box(Value &&value) noexcept
     : value_(std::move(value))
@@ -439,12 +439,10 @@ private:
   Value value_;
 };
 
-// // A specialization of _box to take advantage of EBO (empty base optimization):
-template <template <class> class Interface, class Value>
+// A specialization of _box to take advantage of EBO (empty base optimization):
+template <class Value>
   requires std::is_empty_v<Value> && (!std::is_final_v<Value>)
-struct [[ANY_EMPTY_BASES]] _box<Interface, Value>
-  : iabstract<Interface>
-  , private Value
+struct [[ANY_EMPTY_BASES]] _box<Value> : private Value
 {
   constexpr explicit _box(Value &&value) noexcept
     : Value(std::move(value))
@@ -625,115 +623,66 @@ struct interface : Base
   static constexpr bool _nothrow_slice = ::any::_nothrow_slice<_interface_type, Base, _buffer_size>;
 
   //! @pre !empty(*this)
-  constexpr virtual void _slice_to_(_value_proxy_root<Interface> &) noexcept(_nothrow_slice)
+  constexpr virtual void _slice_to_(_value_proxy_root<Interface> &out) noexcept(_nothrow_slice)
   {
-    ::any::_die(_pure_virt_msg, "slice_to");
+    ANY_ASSERT(!empty(*this));
+    if constexpr (Base::_box_kind == _box_kind::_proxy)
+    {
+      value(*this)._slice_to_(out);
+      reset(*this);
+    }
+    else if constexpr (Base::_box_kind == _box_kind::_object)
+    {
+      // Move from type-erased values, but not from type-erased references
+      constexpr bool is_value = (Base::_root_kind == _root_kind::_value);
+      out.emplace(auto(::any::_move_if<is_value>(value(*this)))); // potentially throwing
+    }
   }
 
   //! @pre !empty(*this)
-  constexpr virtual void _indirect_bind_(_reference_proxy_root<Interface> &) noexcept
+  constexpr virtual void _indirect_bind_(_reference_proxy_root<Interface> &out) noexcept
   {
-    ::any::_die(_pure_virt_msg, "_indirect_bind_");
+    ANY_ASSERT(!empty(*this));
+    if constexpr (Base::_box_kind == _box_kind::_proxy)
+      value(*this)._indirect_bind_(out);
+    else if constexpr (Base::_box_kind == _box_kind::_object)
+      out._object_bind_(*this);
   }
 
   //! @pre !empty(*this)
-  constexpr virtual void _indirect_bind_(_reference_proxy_root<Interface> &) const noexcept
+  constexpr virtual void _indirect_bind_(_reference_proxy_root<Interface> &out) const noexcept
   {
-    ::any::_die(_pure_virt_msg, "_indirect_bind_");
+    ANY_ASSERT(!empty(*this));
+    if constexpr (Base::_box_kind == _box_kind::_proxy)
+      value(*this)._indirect_bind_(out);
+    else if constexpr (Base::_box_kind == _box_kind::_object)
+      out._object_bind_(*this);
   }
 };
 
-template <template <class> class Interface, class Base, class BaseInterfaces, size_t BufferSize>
-  requires(Base::_box_kind == _box_kind::_proxy)
-struct interface<Interface, Base, BaseInterfaces, BufferSize> : Base
+//////////////////////////////////////////////////////////////////////////////////////////
+// _value_box
+struct _value_box
 {
-  using _bases_type     = BaseInterfaces;
-  using _interface_type = iabstract<Interface, BaseInterfaces>;
-  using Base::_indirect_bind_;
-  using Base::_slice_to_;
-  using Base::Base;
-
-  static constexpr size_t _buffer_size =
-      BufferSize > Base::_buffer_size ? BufferSize : Base::_buffer_size;
-
-  static constexpr bool _nothrow_slice = ::any::_nothrow_slice<_interface_type, Base, _buffer_size>;
-
-  //! @pre !empty(*this)
-  template <class...> // template so it is not considered an override
-  constexpr void _slice_to_(_value_proxy_root<Interface> &out) noexcept(_nothrow_slice)
-  {
-    ANY_ASSERT(!empty(*this));
-    value(*this)._slice_to_(out);
-    reset(*this);
-  }
-
-  //! @pre !empty(*this)
-  template <class Self>
-  constexpr void _indirect_bind_(this Self &self, _reference_proxy_root<Interface> &out) noexcept
-  {
-    ANY_ASSERT(!empty(self));
-    value(self)._indirect_bind_(out);
-  }
-};
-
-template <template <class> class Interface, class Base, class BaseInterfaces, size_t BufferSize>
-  requires(Base::_box_kind == _box_kind::_object)
-struct interface<Interface, Base, BaseInterfaces, BufferSize> : Base
-{
-  using _bases_type     = BaseInterfaces;
-  using _interface_type = iabstract<Interface, BaseInterfaces>;
-  using Base::_indirect_bind_;
-  using Base::_slice_to_;
-  using Base::Base;
-
-  static constexpr size_t _buffer_size =
-      BufferSize > Base::_buffer_size ? BufferSize : Base::_buffer_size;
-
-  static constexpr bool _nothrow_slice = ::any::_nothrow_slice<_interface_type, Base, _buffer_size>;
-
-  //! @pre !empty(*this)
-  constexpr void
-  _slice_to_(_value_proxy_root<Interface> &out) noexcept(_nothrow_slice) final override
-  {
-    ANY_ASSERT(!empty(*this));
-    // Move from type-erased values, but not from type-erased references
-    constexpr bool is_value = (Base::_root_kind == _root_kind::_value);
-    out.emplace(auto(::any::_move_if<is_value>(value(*this)))); // potentially throwing
-  }
-
-  //! @pre !empty(*this)
-  constexpr void _indirect_bind_(_reference_proxy_root<Interface> &out) noexcept final override
-  {
-    ANY_ASSERT(!empty(*this));
-    out._object_bind_(*this);
-  }
-
-  //! @pre !empty(*this)
-  constexpr void
-  _indirect_bind_(_reference_proxy_root<Interface> &out) const noexcept final override
-  {
-    ANY_ASSERT(!empty(*this));
-    out._object_bind_(*this);
-  }
+  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
+  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _value_root
 template <template <class> class Interface, class Value>
-struct _value_root : _box<Interface, Value>
+struct [[ANY_EMPTY_BASES]] _value_root
+  : iabstract<Interface>
+  , _value_box
+  , _box<Value>
 {
-  template <class CvSelf>
-  using element_type                            = _copy_cvref_t<CvSelf, Value>;
-  using interface_type                          = iabstract<Interface>;
-  using value_type                              = Value;
-
-  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
-  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
-
-  constexpr explicit _value_root(Value value) noexcept
-    : _box<Interface, Value>(std::move(value))
-  {
-  }
+  template <class Self>
+  using element_type   = _copy_cvref_t<Self, Value>;
+  using value_type     = Value;
+  using interface_type = iabstract<Interface>;
+  using _box<Value>::_box;
+  using _box<Value>::_value_;
+  using _value_box::_box_kind;
 
   [[nodiscard]]
   constexpr bool _empty_() const noexcept final override
@@ -976,22 +925,27 @@ private:
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// _reference_root
-template <template <class> class Interface, class CvValue>
-struct _reference_root<Interface, CvValue> : iabstract<Interface>
+// _reference_box
+struct _reference_box
 {
-  static_assert(!extension_of<CvValue, Interface>,
-                "Value must be a concrete type, not an Interface type.");
-
-  template <class>
-  using element_type                            = CvValue;
-  using value_type                              = std::remove_cv_t<CvValue>;
-  using interface_type                          = iabstract<Interface>;
-
   static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
   static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_reference;
+};
 
-  _reference_root()                             = default;
+//////////////////////////////////////////////////////////////////////////////////////////
+// _reference_root
+template <template <class> class Interface, class CvValue>
+struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
+  : iabstract<Interface>
+  , _reference_box
+{
+  template <class>
+  using element_type   = CvValue;
+  using value_type     = std::remove_cv_t<CvValue>;
+  using interface_type = iabstract<Interface>;
+  using _reference_box::_box_kind;
+
+  _reference_root() = default;
 
   constexpr explicit _reference_root(CvValue &value) noexcept
     : value_(std::addressof(value))
@@ -1042,6 +996,9 @@ struct _reference_root<Interface, CvValue> : iabstract<Interface>
   }
 
 private:
+  static_assert(!extension_of<CvValue, Interface>,
+                "Value must be a concrete type, not an Interface type.");
+
   template <template <class> class, class, class>
   friend struct _reference_root;
 
