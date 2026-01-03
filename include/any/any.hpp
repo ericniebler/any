@@ -323,17 +323,18 @@ struct _tagged_ptr
   }
 
   [[ANY_ALWAYS_INLINE, nodiscard]]
-  inline constexpr bool _is_vptr() const noexcept
+  inline constexpr bool _is_tagged() const noexcept
   {
-    return (data_ & 1) == 0;
+    return bool(data_ & std::uintptr_t(1));
   }
 
   [[nodiscard]]
   constexpr bool operator==(std::nullptr_t) const noexcept
   {
-    return data_ == 1;
+    return data_ <= std::uintptr_t(1);
   }
 
+private:
   std::uintptr_t data_;
 };
 
@@ -786,7 +787,7 @@ struct _value_proxy_root : iabstract<Interface>
       auto &that_ptr = *::any::start_lifetime_as<_tagged_ptr>(other.buffer_);
 
       // This also covers the case where both this_ptr and that_ptr are null.
-      if (!this_ptr._is_vptr() && !that_ptr._is_vptr())
+      if (this_ptr._is_tagged() && that_ptr._is_tagged())
         return std::swap(this_ptr, that_ptr);
 
       if (this_ptr == nullptr)
@@ -824,7 +825,7 @@ struct _value_proxy_root : iabstract<Interface>
     }
     else
     {
-      return ::any::start_lifetime_as<_tagged_ptr>(buffer_)->_is_vptr();
+      return !(*::any::start_lifetime_as<_tagged_ptr>(buffer_))._is_tagged();
     }
   }
 
@@ -864,7 +865,7 @@ private:
     {
       auto const ptr = *::any::start_lifetime_as<_tagged_ptr>(self.buffer_);
       ANY_ASSERT(ptr != nullptr);
-      auto *root_ptr = static_cast<root_ptr_t>(ptr._is_vptr() ? self.buffer_ : ptr._get());
+      auto *root_ptr = static_cast<root_ptr_t>(ptr._is_tagged() ? ptr._get() : self.buffer_);
       return static_cast<interface_ref_t>(*::any::_polymorphic_downcast<interface_ptr_t>(root_ptr));
     }
   }
@@ -894,7 +895,7 @@ private:
       auto &ptr = *::any::start_lifetime_as<_tagged_ptr>(buffer_);
       if (ptr == nullptr)
         return;
-      else if (ptr._is_vptr())
+      else if (!ptr._is_tagged())
         std::destroy_at(std::addressof(_value_()));
       else
         delete std::addressof(_value_());
@@ -956,7 +957,8 @@ struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
   using interface_type = iabstract<Interface>;
   using _reference_box::_box_kind;
 
-  _reference_root() = default;
+  _reference_root(_reference_root &&)            = delete;
+  _reference_root &operator=(_reference_root &&) = delete;
 
   constexpr explicit _reference_root(CvValue *value, _iroot *root) noexcept
   {
@@ -994,7 +996,7 @@ struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
     }
     else
     {
-      return !void_ptr_._is_vptr();
+      return void_ptr_._is_tagged();
     }
   }
 
@@ -1045,14 +1047,9 @@ struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
     }
 
     if (self._is_indirect_())
-    {
       return static_cast<value_ref_t>(const_cast<value_ref_t &>(self._dereference_()));
-    }
     else
-    {
-      auto *value_ptr = self._get_value_ptr_();
-      return static_cast<value_ref_t>(const_cast<value_ref_t &>((*value_ptr)));
-    }
+      return static_cast<value_ref_t>(const_cast<value_ref_t &>(*self._get_value_ptr_()));
   }
 
   [[nodiscard]]
@@ -1188,13 +1185,13 @@ struct _reference_proxy_root : iabstract<Interface>
         //! Optimize for when Base derives from iabstract<Interface>. Store the
         //! address of value(other) directly in out as a tagged ptr instead of
         //! introducing an indirection.
-        //! @post _is_vptr() == false
+        //! @post _is_tagged() == true
         auto &ptr = *::any::start_lifetime_as<_tagged_ptr>(buffer_);
         ptr       = static_cast<iabstract<Interface> *>(std::addressof(::any::_unconst(model)));
       }
       else
       {
-        //! @post _is_vptr() == true
+        //! @post _is_tagged() == false
         model._indirect_bind_(*this);
       }
     }
@@ -1245,7 +1242,7 @@ struct _reference_proxy_root : iabstract<Interface>
     {
       ANY_ASSERT(!empty(self));
       auto const ptr       = *::any::start_lifetime_as<_tagged_ptr>(self.buffer_);
-      auto *const root_ptr = static_cast<root_ptr_t>(ptr._is_vptr() ? self.buffer_ : ptr._get());
+      auto *const root_ptr = static_cast<root_ptr_t>(ptr._is_tagged() ? ptr._get() : self.buffer_);
       return static_cast<interface_ref_t>(*::any::_polymorphic_downcast<interface_ptr_t>(root_ptr));
     }
   }
@@ -1296,7 +1293,7 @@ struct _reference_proxy_root : iabstract<Interface>
     }
     else
     {
-      return ::any::start_lifetime_as<_tagged_ptr>(buffer_)->_is_vptr();
+      return !(*::any::start_lifetime_as<_tagged_ptr>(buffer_))._is_tagged();
     }
   }
 
