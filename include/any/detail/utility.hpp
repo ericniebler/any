@@ -194,6 +194,13 @@ inline constexpr auto *_polymorphic_downcast(CvInterface *from) noexcept
   return static_cast<value_type *>(from);
 }
 
+template <class T>
+[[ANY_ALWAYS_INLINE, nodiscard]]
+inline constexpr T _decay_copy(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
+{
+  return value;
+}
+
 } // namespace any
 
 ANY_DIAG_POP
