@@ -96,21 +96,9 @@
 #endif
 
 #if defined(_MSC_VER)
-#  define ANY_EMPTY_BASES       ANY_PP_RBRACKET2 __declspec(empty_bases) ANY_PP_LBRACKET2
-#  define ANY_NO_UNIQUE_ADDRESS msvc::no_unique_address
+#  define ANY_EMPTY_BASES ANY_PP_RBRACKET2 __declspec(empty_bases) ANY_PP_LBRACKET2
 #else
 #  define ANY_EMPTY_BASES
-#  define ANY_NO_UNIQUE_ADDRESS no_unique_address
-#endif
-
-#if defined(_MSC_VER)
-#  if _MSC_VER >= 19'35
-#    define ANY_PRETTY_FUNCTION __builtin_FUNCSIG()
-#  else
-#    define ANY_PRETTY_FUNCTION __FUNCSIG__
-#  endif
-#else
-#  define ANY_PRETTY_FUNCTION __PRETTY_FUNCTION__
 #endif
 
 #define ANY_ASSERT(...)                                                                            \

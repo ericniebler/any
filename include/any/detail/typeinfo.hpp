@@ -19,6 +19,7 @@
 #include "config.hpp"
 
 #include <compare>
+#include <source_location>
 #include <string_view>
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -48,12 +49,12 @@ struct _xyzzy
   };
 };
 
-constexpr char _type_name_prefix[] = "_xyzzy<";
-constexpr char _type_name_suffix[] = ">::_plugh";
+inline constexpr char _type_name_prefix[] = "_xyzzy<";
+inline constexpr char _type_name_suffix[] = ">::_plugh";
 
 // Get the type name from the function name by trimming the front and back.
 [[nodiscard]]
-constexpr std::string_view _find_pretty_name(std::string_view fun_name) noexcept
+consteval std::string_view _find_pretty_name(std::string_view fun_name) noexcept
 {
   auto const beg_pos = fun_name.find(_type_name_prefix);
   auto const end_pos = fun_name.rfind(_type_name_suffix);
@@ -66,14 +67,14 @@ constexpr std::string_view _find_pretty_name(std::string_view fun_name) noexcept
 
 template <class T>
 [[nodiscard]]
-constexpr std::string_view _get_pretty_name_helper() noexcept
+consteval std::string_view _get_pretty_name_helper() noexcept
 {
-  return _detail::_find_pretty_name(std::string_view{ANY_PRETTY_FUNCTION});
+  return _detail::_find_pretty_name(std::source_location::current().function_name());
 }
 
 template <class T>
 [[nodiscard]]
-constexpr std::string_view _get_pretty_name() noexcept
+consteval std::string_view _get_pretty_name() noexcept
 {
   return _detail::_get_pretty_name_helper<typename _xyzzy<T>::_plugh>();
 }
