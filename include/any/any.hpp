@@ -503,15 +503,15 @@ struct extends<BaseInterface, BaseInterfaces...>
 //////////////////////////////////////////////////////////////////////////////////////////
 // _emplace_into
 template <class Model, class... Args>
-constexpr Model &_emplace_into([[maybe_unused]] _iroot *&pointer,
+constexpr Model &_emplace_into([[maybe_unused]] _iroot *&root_ptr,
                                [[maybe_unused]] std::span<std::byte> buffer,
                                Args &&...args)
 {
   static_assert(_decayed<Model>);
   if consteval
   {
-    pointer = ::new Model(std::forward<Args>(args)...);
-    return *static_cast<Model *>(pointer);
+    root_ptr = ::new Model(std::forward<Args>(args)...);
+    return *static_cast<Model *>(root_ptr);
   }
   else
   {
@@ -532,9 +532,9 @@ constexpr Model &_emplace_into([[maybe_unused]] _iroot *&pointer,
 template <int = 0, class CvRefValue, class Value = std::decay_t<CvRefValue>>
 [[ANY_ALWAYS_INLINE]]
 inline constexpr Value &
-_emplace_into(_iroot *&pointer, std::span<std::byte> buffer, CvRefValue &&value)
+_emplace_into(_iroot *&root_ptr, std::span<std::byte> buffer, CvRefValue &&value)
 {
-  return ::any::_emplace_into<Value>(pointer, buffer, std::forward<CvRefValue>(value));
+  return ::any::_emplace_into<Value>(root_ptr, buffer, std::forward<CvRefValue>(value));
 }
 
 // reference
@@ -634,7 +634,7 @@ struct interface : Base
     {
       // Move from type-erased values, but not from type-erased references
       constexpr bool is_value = (Base::_root_kind == _root_kind::_value);
-      out.emplace(auto(::any::_move_if<is_value>(value(*this)))); // potentially throwing
+      out.emplace(ANY_DECAY_COPY(::any::_move_if<is_value>(value(*this)))); // potentially throwing
     }
   }
 
@@ -1213,7 +1213,7 @@ struct _reference_proxy_root : iabstract<Interface>
     {
       _iroot *root = std::addressof(const_cast<std::remove_cv_t<CvModel> &>(model));
       ::any::_emplace_into<model_type>(
-          pointer_, buffer_, static_cast<element_type *>(nullptr), auto(root));
+          pointer_, buffer_, static_cast<element_type *>(nullptr), ANY_DECAY_COPY(root));
     }
   }
 

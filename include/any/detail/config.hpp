@@ -101,6 +101,12 @@
 #  define ANY_EMPTY_BASES
 #endif
 
+#if __cpp_auto_cast
+#  define ANY_DECAY_COPY(...) auto(__VA_ARGS__)
+#else
+#  define ANY_DECAY_COPY(...) ::any::_decay_copy(__VA_ARGS__)
+#endif
+
 #define ANY_ASSERT(...)                                                                            \
   do                                                                                               \
   {                                                                                                \
