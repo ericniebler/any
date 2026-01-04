@@ -722,7 +722,7 @@ struct _value_proxy_root : iabstract<Interface>
   {
     if consteval
     {
-      pointer_ = nullptr;
+      root_ptr_ = nullptr;
     }
     else
     {
@@ -742,7 +742,7 @@ struct _value_proxy_root : iabstract<Interface>
     : _value_proxy_root()
   {
     if (!empty(other))
-      value(other)._copy_to(pointer_, buffer_);
+      value(other)._copy_to(root_ptr_, buffer_);
   }
 
   constexpr ~_value_proxy_root()
@@ -753,7 +753,7 @@ struct _value_proxy_root : iabstract<Interface>
   constexpr _value_proxy_root &operator=(_value_proxy_root &&other) noexcept
     requires _movable
   {
-    if (this != &other)
+    if (this != std::addressof(other))
     {
       _reset_();
       swap(other);
@@ -764,7 +764,7 @@ struct _value_proxy_root : iabstract<Interface>
   constexpr _value_proxy_root &operator=(_value_proxy_root const &other)
     requires _copyable
   {
-    if (this != &other)
+    if (this != std::addressof(other))
       _value_proxy_root(other).swap(*this);
     return *this;
   }
@@ -774,11 +774,11 @@ struct _value_proxy_root : iabstract<Interface>
   {
     if consteval
     {
-      std::swap(pointer_, other.pointer_);
+      std::swap(root_ptr_, other.root_ptr_);
     }
     else
     {
-      if (this == &other)
+      if (this == std::addressof(other))
         return;
 
       auto &this_ptr = *::any::start_lifetime_as<_tagged_ptr>(buffer_);
@@ -789,14 +789,14 @@ struct _value_proxy_root : iabstract<Interface>
         return std::swap(this_ptr, that_ptr);
 
       if (this_ptr == nullptr)
-        return value(other)._move_to(pointer_, buffer_);
+        return value(other)._move_to(root_ptr_, buffer_);
 
       if (that_ptr == nullptr)
-        return value(*this)._move_to(other.pointer_, other.buffer_);
+        return value(*this)._move_to(other.root_ptr_, other.buffer_);
 
       auto temp = std::move(*this);
-      value(other)._move_to(pointer_, buffer_);
-      value(temp)._move_to(other.pointer_, other.buffer_);
+      value(other)._move_to(root_ptr_, buffer_);
+      value(temp)._move_to(other.root_ptr_, other.buffer_);
     }
   }
 
@@ -837,7 +837,7 @@ private:
   {
     static_assert(_decayed<Value>, "Value must be an object type.");
     using model_type = _value_model<Interface, Value>;
-    auto &model = ::any::_emplace_into<model_type>(pointer_, buffer_, std::forward<Args>(args)...);
+    auto &model = ::any::_emplace_into<model_type>(root_ptr_, buffer_, std::forward<Args>(args)...);
     return model._value_();
   }
 
@@ -857,7 +857,7 @@ private:
     if consteval
     {
       return static_cast<interface_ref_t>(
-          *::any::_polymorphic_downcast<interface_ptr_t>(self.pointer_));
+          *::any::_polymorphic_downcast<interface_ptr_t>(self.root_ptr_));
     }
     else
     {
@@ -873,7 +873,7 @@ private:
   {
     if consteval
     {
-      return pointer_ == nullptr;
+      return root_ptr_ == nullptr;
     }
     else
     {
@@ -886,7 +886,7 @@ private:
   {
     if consteval
     {
-      delete std::exchange(pointer_, nullptr);
+      delete std::exchange(root_ptr_, nullptr);
     }
     else
     {
@@ -916,7 +916,7 @@ private:
 
   union
   {
-    _iroot *pointer_ = nullptr;                            //!< Used in consteval context
+    _iroot *root_ptr_ = nullptr;                           //!< Used in consteval context
     std::byte buffer_[iabstract<Interface>::_buffer_size]; //!< Used in runtime context
   };
 };
@@ -1151,16 +1151,16 @@ struct _reference_proxy_root : iabstract<Interface>
 
   constexpr void swap(_reference_proxy_root &other) noexcept
   {
-    if (this != &other)
+    if (this == std::addressof(other))
+      return;
+
+    if consteval
     {
-      if consteval
-      {
-        std::swap(root_ptr_, other.root_ptr_);
-      }
-      else
-      {
-        std::swap(buffer_, other.buffer_);
-      }
+      std::swap(root_ptr_, other.root_ptr_);
+    }
+    else
+    {
+      std::swap(buffer_, other.buffer_);
     }
   }
 
@@ -1636,12 +1636,13 @@ private:
     }
     else if consteval
     {
-      (*this).pointer_ = std::exchange(other.pointer_, nullptr);
+      (*this).root_ptr_ = std::exchange(other.root_ptr_, nullptr);
     }
     else
     {
-      auto &ptr = *::any::start_lifetime_as<_tagged_ptr>((*this).buffer_);
-      ptr       = *::any::start_lifetime_as<_tagged_ptr>(other.buffer_);
+      auto &this_ptr = *::any::start_lifetime_as<_tagged_ptr>((*this).buffer_);
+      auto &that_ptr = *::any::start_lifetime_as<_tagged_ptr>(other.buffer_);
+      this_ptr       = std::exchange(that_ptr, nullptr);
     }
   }
 
