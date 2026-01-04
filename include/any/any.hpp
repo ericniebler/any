@@ -538,15 +538,15 @@ _emplace_into(_iroot *&root_ptr, std::span<std::byte> buffer, CvRefValue &&value
 }
 
 // reference
-template <template <class> class Interface, class CvValue, class Extension = iabstract<Interface>>
+template <template <class> class Interface, class Value, class Extension = iabstract<Interface>>
 struct _reference_root;
 
-template <template <class> class Interface, class CvValue, class Extension = iabstract<Interface>>
+template <template <class> class Interface, class Value, class Extension = iabstract<Interface>>
 struct _reference_model
-  : Interface<_mcall<_bases_of<Interface>, _reference_root<Interface, CvValue, Extension>>>
+  : Interface<_mcall<_bases_of<Interface>, _reference_root<Interface, Value, Extension>>>
 {
   using _base_t =
-      Interface<_mcall<_bases_of<Interface>, _reference_root<Interface, CvValue, Extension>>>;
+      Interface<_mcall<_bases_of<Interface>, _reference_root<Interface, Value, Extension>>>;
   using _base_t::_base_t;
 };
 
@@ -675,8 +675,6 @@ struct [[ANY_EMPTY_BASES]] _value_root
   , _value_box
   , _box<Value>
 {
-  template <class Self>
-  using element_type   = _copy_cvref_t<Self, Value>;
   using value_type     = Value;
   using interface_type = iabstract<Interface>;
   using _box<Value>::_box;
@@ -925,13 +923,13 @@ private:
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _reference_union
-template <class CvValue>
+template <class Value>
 struct _reference_union
 {
   union
   {
-    CvValue *value_ = nullptr;
-    _iroot *root_; // points to a _value_root<Extension, value_type>
+    Value *value_ptr_ = nullptr;
+    _iroot *root_ptr_; // points to a _value_root<Extension, value_type>
   };
   bool which_ = false; // true if root, false if value
 };
@@ -946,35 +944,33 @@ struct _reference_box
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _reference_root
-template <template <class> class Interface, class CvValue>
-struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
+template <template <class> class Interface, class Value>
+struct [[ANY_EMPTY_BASES]] _reference_root<Interface, Value>
   : iabstract<Interface>
   , _reference_box
 {
-  template <class>
-  using element_type   = CvValue;
-  using value_type     = std::remove_cv_t<CvValue>;
+  using value_type     = Value;
   using interface_type = iabstract<Interface>;
   using _reference_box::_box_kind;
 
   _reference_root(_reference_root &&)            = delete;
   _reference_root &operator=(_reference_root &&) = delete;
 
-  constexpr explicit _reference_root(CvValue *value, _iroot *root) noexcept
+  constexpr explicit _reference_root(Value *value_ptr, _iroot *root_ptr) noexcept
   {
     if consteval
     {
-      if (value != nullptr)
-        union_ = ::new _reference_union<CvValue>{.value_ = value, .which_ = false};
+      if (value_ptr != nullptr)
+        union_ = ::new _reference_union<Value>{.value_ptr_ = value_ptr, .which_ = false};
       else
-        union_ = ::new _reference_union<CvValue>{.root_ = root, .which_ = true};
+        union_ = ::new _reference_union<Value>{.root_ptr_ = root_ptr, .which_ = true};
     }
     else
     {
-      if (value != nullptr)
-        void_ptr_ = _tagged_ptr(const_cast<value_type *>(value), false);
+      if (value_ptr != nullptr)
+        void_ptr_ = _tagged_ptr(value_ptr, false);
       else
-        void_ptr_ = _tagged_ptr(root, true);
+        void_ptr_ = _tagged_ptr(root_ptr, true);
     }
   }
 
@@ -1001,18 +997,18 @@ struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
   }
 
   [[nodiscard]]
-  constexpr CvValue *_get_value_ptr_() const noexcept
+  constexpr Value *_get_value_ptr_() const noexcept
   {
     if (_is_indirect_())
       return nullptr;
 
     if consteval
     {
-      return union_->value_;
+      return union_->value_ptr_;
     }
     else
     {
-      return static_cast<CvValue *>(void_ptr_._get());
+      return static_cast<Value *>(void_ptr_._get());
     }
   }
 
@@ -1024,7 +1020,7 @@ struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
 
     if consteval
     {
-      return union_->root_;
+      return union_->root_ptr_;
     }
     else
     {
@@ -1041,7 +1037,7 @@ struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
     if !consteval
     {
       ANY_ASSERT(
-          (std::convertible_to<CvValue &, value_ref_t>)
+          (std::convertible_to<Value &, value_ref_t>)
           && "attempt to get a mutable reference from a const reference, or an rvalue from an "
              "lvalue");
     }
@@ -1076,11 +1072,11 @@ struct [[ANY_EMPTY_BASES]] _reference_root<Interface, CvValue>
   }
 
 private:
-  static_assert(!extension_of<CvValue, Interface>,
+  static_assert(!extension_of<Value, Interface>,
                 "Value must be a concrete type, not an Interface type.");
 
   [[nodiscard]]
-  constexpr virtual CvValue &_dereference_() const noexcept
+  constexpr virtual Value &_dereference_() const noexcept
   {
     auto *root_ptr     = _get_root_ptr_();
     using value_root_t = _value_root<Interface, value_type>;
@@ -1089,21 +1085,19 @@ private:
 
   union
   {
-    _reference_union<CvValue> *union_;
+    _reference_union<Value> *union_;
     _tagged_ptr void_ptr_;
   };
 };
 
-template <template <class> class Interface, class CvValue, template <class> class Extension>
-struct _reference_root<Interface, CvValue, iabstract<Extension>>
-  : _reference_root<Interface, CvValue>
+template <template <class> class Interface, class Value, template <class> class Extension>
+struct _reference_root<Interface, Value, iabstract<Extension>> : _reference_root<Interface, Value>
 {
-  using value_type = std::remove_cv_t<CvValue>;
-
-  using _reference_root<Interface, CvValue>::_reference_root;
+  using value_type = Value;
+  using _reference_root<Interface, Value>::_reference_root;
 
   [[nodiscard]]
-  constexpr CvValue &_dereference_() const noexcept final override
+  constexpr Value &_dereference_() const noexcept final override
   {
     auto *root_ptr     = (*this)._get_root_ptr_();
     using value_root_t = _value_root<Extension, value_type>;
@@ -1124,7 +1118,7 @@ struct _reference_proxy_root : iabstract<Interface>
   {
     if consteval
     {
-      pointer_ = nullptr;
+      root_ptr_ = nullptr;
     }
     else
     {
@@ -1161,7 +1155,7 @@ struct _reference_proxy_root : iabstract<Interface>
     {
       if consteval
       {
-        std::swap(pointer_, other.pointer_);
+        std::swap(root_ptr_, other.root_ptr_);
       }
       else
       {
@@ -1202,18 +1196,18 @@ struct _reference_proxy_root : iabstract<Interface>
   {
     static_assert(extension_of<CvModel, Interface>);
     using extension_type = CvModel::interface_type;
-    using element_type   = CvModel::template element_type<CvModel>;
-    using model_type     = _reference_model<Interface, element_type, extension_type>;
+    using value_type     = CvModel::value_type;
+    using model_type     = _reference_model<Interface, value_type, extension_type>;
     if constexpr (CvModel::_root_kind == _root_kind::_reference)
     {
       ::any::_emplace_into<model_type>(
-          pointer_, buffer_, model._get_value_ptr_(), model._get_root_ptr_());
+          root_ptr_, buffer_, model._get_value_ptr_(), model._get_root_ptr_());
     }
     else
     {
       _iroot *root = std::addressof(const_cast<std::remove_cv_t<CvModel> &>(model));
       ::any::_emplace_into<model_type>(
-          pointer_, buffer_, static_cast<element_type *>(nullptr), ANY_DECAY_COPY(root));
+          root_ptr_, buffer_, static_cast<value_type *>(nullptr), ANY_DECAY_COPY(root));
     }
   }
 
@@ -1223,7 +1217,7 @@ struct _reference_proxy_root : iabstract<Interface>
     static_assert(!extension_of<CvValue, Interface>);
     using model_type = _reference_model<Interface, CvValue>;
     ::any::_emplace_into<model_type>(
-        pointer_, buffer_, std::addressof(value), static_cast<_iroot *>(nullptr));
+        root_ptr_, buffer_, std::addressof(value), static_cast<_iroot *>(nullptr));
   }
 
   template <class Self>
@@ -1236,7 +1230,7 @@ struct _reference_proxy_root : iabstract<Interface>
     if consteval
     {
       return static_cast<interface_ref_t>(
-          *::any::_polymorphic_downcast<interface_ptr_t>(self.pointer_));
+          *::any::_polymorphic_downcast<interface_ptr_t>(self.root_ptr_));
     }
     else
     {
@@ -1252,7 +1246,7 @@ struct _reference_proxy_root : iabstract<Interface>
   {
     if consteval
     {
-      return pointer_ == nullptr;
+      return root_ptr_ == nullptr;
     }
     else
     {
@@ -1264,7 +1258,7 @@ struct _reference_proxy_root : iabstract<Interface>
   {
     if consteval
     {
-      delete std::exchange(pointer_, nullptr);
+      delete std::exchange(root_ptr_, nullptr);
     }
     else
     {
@@ -1300,7 +1294,7 @@ struct _reference_proxy_root : iabstract<Interface>
 private:
   union
   {
-    _iroot *pointer_ = nullptr; //!< Used in consteval context
+    _iroot *root_ptr_ = nullptr; //!< Used in consteval context
     // storage for one vtable ptr and one pointer for the referant
     mutable std::byte buffer_[2 * sizeof(void *)]; //!< Used in runtime context
   };
@@ -1376,10 +1370,8 @@ private:
   {
     static_assert(CvProxy::_box_kind == _box_kind::_proxy, "CvProxy must be a proxy type.");
     static_assert(!extension_of<Value, Interface>, "Cannot dynamic cast to an Interface type.");
-    using referant_type   = _copy_cvref_t<CvProxy, Value>;
-
     using value_model     = _copy_cvref_t<CvProxy, _value_root<Interface, Value>>;
-    using reference_model = _copy_cvref_t<CvProxy, _reference_root<Interface, referant_type>>;
+    using reference_model = _copy_cvref_t<CvProxy, _reference_root<Interface, Value>>;
 
     // get the address of the model from the proxy:
     auto *model_ptr = std::addressof(value(*proxy_ptr));
