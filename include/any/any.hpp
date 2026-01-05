@@ -431,7 +431,7 @@ struct _box
   [[nodiscard]]
   constexpr auto &&_value_(this Self &&self) noexcept
   {
-    return static_cast<Self &&>(self).value_;
+    return std::forward<Self>(self).value_;
   }
 
 private:

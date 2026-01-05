@@ -19,7 +19,6 @@
 #include <cstdio>
 
 #include <concepts>
-#include <type_traits>
 
 #include "catch2/catch_all.hpp" // IWYU pragma: keep
 
@@ -63,35 +62,48 @@ struct ibaz : any::interface<ibaz, Base, any::extends<ibar>, 5 * sizeof(void *)>
   }
 };
 
+using Small = char;
+using Big   = char[sizeof(any::any<ibaz>) + 1];
+
+template <class State>
 struct foobar
 {
   constexpr void foo()
   {
-    if (!std::is_constant_evaluated())
+    if !consteval
+    {
       std::printf("foo override, value = %d\n", value);
+    }
   }
 
   constexpr void cfoo() const
   {
-    if (!std::is_constant_evaluated())
+    if !consteval
+    {
       std::printf("cfoo override, value = %d\n", value);
+    }
   }
 
   constexpr void bar()
   {
-    if (!std::is_constant_evaluated())
+    if !consteval
+    {
       std::printf("bar override, value = %d\n", value);
+    }
   }
 
   constexpr void baz()
   {
-    if (!std::is_constant_evaluated())
+    if !consteval
+    {
       std::printf("baz override, value = %d\n", value);
+    }
   }
 
   bool operator==(foobar const &other) const noexcept = default;
 
   int value                                           = 42;
+  State state;
 };
 
 static_assert(std::derived_from<any::iabstract<any::icopyable>, any::iabstract<any::imovable>>);
@@ -137,9 +149,10 @@ struct IBaz : any::interface<IBaz, Base, any::extends<IFoo, IBar>> // inherits t
 static_assert(std::derived_from<any::iabstract<IBaz>, any::iabstract<IFoo>>);
 static_assert(std::derived_from<any::iabstract<IBaz>, any::iabstract<any::icopyable>>);
 
+template <class T>
 void test_deadly_diamond_of_death()
 {
-  any::any<IBaz> m(foobar{});
+  any::any<IBaz> m(foobar<T>{});
 
   m.foo();
   m.bar();
@@ -149,11 +162,12 @@ void test_deadly_diamond_of_death()
 static_assert(any::iabstract<ifoo>::_buffer_size < any::iabstract<ibaz>::_buffer_size);
 
 // test constant evaluation works
+template <class T>
 consteval void test_consteval()
 {
-  any::any<ibaz> m(foobar{});
-  [[maybe_unused]] auto x = any::any_static_cast<foobar>(m);
-  x                       = any::any_cast<foobar>(m);
+  any::any<ibaz> m(foobar<T>{});
+  [[maybe_unused]] auto x = any::any_static_cast<foobar<T>>(m);
+  x                       = any::any_cast<foobar<T>>(m);
   m.foo();
   [[maybe_unused]] auto n               = m;
   [[maybe_unused]] auto p               = any::caddressof(m);
@@ -163,22 +177,19 @@ consteval void test_consteval()
     throw "error";
 
   any::any_ptr<ibaz> pifoo = any::addressof(m);
-  [[maybe_unused]] auto y  = any::any_cast<foobar>(pifoo);
+  [[maybe_unused]] auto y  = any::any_cast<foobar<T>>(pifoo);
 }
 
-TEST_CASE("basic usage", "[any]")
+TEMPLATE_TEST_CASE("basic usage", "[any]", foobar<Small>, foobar<Big>)
 {
-  std::printf("%.*s\n", (int)ANY_TYPEID(foobar).name().size(), ANY_TYPEID(foobar).name().data());
-  std::printf("sizeof void*: %d\n", (int)sizeof(void *));
-  std::printf("sizeof interface: %d\n", (int)sizeof(any::iabstract<ibaz>));
-
 #if ANY_COMPILER_CLANG || ANY_COMPILER_GCC >= 14'03
-  test_consteval(); // NOLINT(invalid_consteval_call)
+  test_consteval<Small>(); // NOLINT(invalid_consteval_call)
+  test_consteval<Big>();   // NOLINT(invalid_consteval_call)
 #endif
 
-  any::any<ibaz> m(foobar{});
-  REQUIRE(m._in_situ_());
-  REQUIRE(any::type(m) == ANY_TYPEID(foobar));
+  any::any<ibaz> m(foobar<TestType>{});
+  REQUIRE(m._in_situ_() == (sizeof(TestType) <= any::iabstract<ibaz>::_buffer_size));
+  REQUIRE(any::type(m) == ANY_TYPEID(foobar<TestType>));
 
   m.foo();
   m.bar();
@@ -186,6 +197,8 @@ TEST_CASE("basic usage", "[any]")
 
   any::any<ifoo> n = std::move(m);
   n.foo();
+
+  m        = foobar<TestType>{};
 
   auto ptr = any::caddressof(m);
   any::_unconst(*ptr).foo();
@@ -236,5 +249,5 @@ TEST_CASE("basic usage", "[any]")
 
   REQUIRE(y == z);
 
-  test_deadly_diamond_of_death();
+  test_deadly_diamond_of_death<TestType>();
 }
