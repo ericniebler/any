@@ -38,6 +38,8 @@ struct drawable
 int main()
 {
   any::any<idrawable> widget = my::drawable{};
-  a.draw(); // prints "my::drawable::draw()"
+
+  // prints "my::drawable::draw()":
+  widget.draw();
 }
 ```
