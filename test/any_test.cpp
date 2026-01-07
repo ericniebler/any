@@ -183,8 +183,7 @@ consteval void test_consteval()
 TEMPLATE_TEST_CASE("basic usage", "[any]", foobar<Small>, foobar<Big>)
 {
 #if ANY_COMPILER_CLANG || ANY_COMPILER_GCC >= 14'03
-  test_consteval<Small>(); // NOLINT(invalid_consteval_call)
-  test_consteval<Big>();   // NOLINT(invalid_consteval_call)
+  test_consteval<TestType>(); // NOLINT(invalid_consteval_call)
 #endif
 
   any::any<ibaz> m(foobar<TestType>{});
