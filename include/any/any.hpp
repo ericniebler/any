@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include <bit>
 #include <exception>
 #include <memory>
 #include <span>
@@ -174,8 +175,9 @@ using _bases_of = Interface<_iroot>::_bases_type;
 
 template <template <class> class Interface,
           class Base,
-          class BaseInterfaces = extends<>,
-          size_t BufferSize    = default_buffer_size>
+          class BaseInterfaces   = extends<>,
+          size_t BufferSize      = default_buffer_size,
+          size_t BufferAlignment = alignof(std::max_align_t)>
 struct interface;
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -373,14 +375,15 @@ enum class _root_kind
 struct _iroot
 {
   static constexpr ::any::_box_kind _box_kind = ::any::_box_kind::_abstract;
-  static constexpr size_t _buffer_size        = sizeof(_tagged_ptr); // minimum size
+  static constexpr size_t _buffer_size        = sizeof(_tagged_ptr);  // minimum size
+  static constexpr size_t _buffer_alignment   = alignof(_tagged_ptr); // minimum alignment
   using _bases_type                           = extends<>;
 
   // needed by MSVC for EBO to work for some reason:
   constexpr virtual ~_iroot() = default;
 
 private:
-  template <template <class> class, class, class, size_t>
+  template <template <class> class, class, class, size_t, size_t>
   friend struct interface;
   friend struct _access;
 
@@ -555,7 +558,7 @@ template <template <class> class Interface>
 struct _reference_proxy_root;
 
 template <template <class> class Interface>
-struct _reference // _reference_proxy_model
+struct _reference final // _reference_proxy_model
   : Interface<_mcall<_bases_of<Interface>, _reference_proxy_root<Interface>>>
 {
 };
@@ -607,9 +610,14 @@ using _value_proxy_model = _value<Interface>;
 
 //////////////////////////////////////////////////////////////////////////////////////////
 //! interface
-template <template <class> class Interface, class Base, class BaseInterfaces, size_t BufferSize>
+template <template <class> class Interface,
+          class Base,
+          class BaseInterfaces,
+          size_t BufferSize,
+          size_t BufferAlignment>
 struct interface : Base
 {
+  static_assert(std::popcount(BufferAlignment) == 1, "BufferAlignment must be a power of two");
   using _bases_type     = BaseInterfaces;
   using _interface_type = iabstract<Interface, BaseInterfaces>;
   using Base::_indirect_bind_;
@@ -618,6 +626,9 @@ struct interface : Base
 
   static constexpr size_t _buffer_size =
       BufferSize > Base::_buffer_size ? BufferSize : Base::_buffer_size;
+
+  static constexpr size_t _buffer_alignment =
+      BufferAlignment > Base::_buffer_alignment ? BufferAlignment : Base::_buffer_alignment;
 
   static constexpr bool _nothrow_slice = ::any::_nothrow_slice<_interface_type, Base, _buffer_size>;
 
@@ -660,11 +671,12 @@ struct interface : Base
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// _value_box
-struct _value_box
+// _box_root_kind
+template <_box_kind BoxKind, _root_kind RootKind>
+struct _box_root_kind
 {
-  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
-  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
+  static constexpr ::any::_box_kind _box_kind   = BoxKind;
+  static constexpr ::any::_root_kind _root_kind = RootKind;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -672,14 +684,14 @@ struct _value_box
 template <template <class> class Interface, class Value>
 struct [[ANY_EMPTY_BASES]] _value_root
   : iabstract<Interface>
-  , _value_box
+  , _box_root_kind<_box_kind::_object, _root_kind::_value>
   , _box<Value>
 {
   using value_type     = Value;
   using interface_type = iabstract<Interface>;
+  using _value_root::_box_root_kind::_box_kind;
   using _box<Value>::_box;
   using _box<Value>::_value_;
-  using _value_box::_box_kind;
 
   [[nodiscard]]
   constexpr bool _empty_() const noexcept final override
@@ -708,14 +720,17 @@ struct [[ANY_EMPTY_BASES]] _value_root
 //////////////////////////////////////////////////////////////////////////////////////////
 // _value_proxy_root
 template <template <class> class Interface>
-struct _value_proxy_root : iabstract<Interface>
+struct [[ANY_EMPTY_BASES]] _value_proxy_root
+  : iabstract<Interface>
+  , _box_root_kind<_box_kind::_proxy, _root_kind::_value>
 {
-  using interface_type                          = iabstract<Interface>;
-  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_proxy;
-  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_value;
+  using interface_type = iabstract<Interface>;
+  using iabstract<Interface>::_buffer_size;
+  using iabstract<Interface>::_buffer_alignment;
+  using _value_proxy_root::_box_root_kind::_box_kind;
 
-  static constexpr bool _movable                = extension_of<iabstract<Interface>, imovable>;
-  static constexpr bool _copyable               = extension_of<iabstract<Interface>, icopyable>;
+  static constexpr bool _movable  = extension_of<iabstract<Interface>, imovable>;
+  static constexpr bool _copyable = extension_of<iabstract<Interface>, icopyable>;
 
   [[ANY_ALWAYS_INLINE]]
   inline constexpr _value_proxy_root() noexcept
@@ -916,8 +931,8 @@ private:
 
   union
   {
-    _iroot *root_ptr_ = nullptr;                           //!< Used in consteval context
-    std::byte buffer_[iabstract<Interface>::_buffer_size]; //!< Used in runtime context
+    _iroot *root_ptr_ = nullptr;                                //!< Used in consteval context
+    alignas(_buffer_alignment) std::byte buffer_[_buffer_size]; //!< Used in runtime context
   };
 };
 
@@ -935,23 +950,15 @@ struct _reference_union
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// _reference_box
-struct _reference_box
-{
-  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_object;
-  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_reference;
-};
-
-//////////////////////////////////////////////////////////////////////////////////////////
 // _reference_root
 template <template <class> class Interface, class Value>
 struct [[ANY_EMPTY_BASES]] _reference_root<Interface, Value>
   : iabstract<Interface>
-  , _reference_box
+  , _box_root_kind<_box_kind::_object, _root_kind::_reference>
 {
   using value_type     = Value;
   using interface_type = iabstract<Interface>;
-  using _reference_box::_box_kind;
+  using _reference_root::_box_root_kind::_box_kind;
 
   _reference_root(_reference_root &&)            = delete;
   _reference_root &operator=(_reference_root &&) = delete;
@@ -1108,11 +1115,12 @@ struct _reference_root<Interface, Value, iabstract<Extension>> : _reference_root
 //////////////////////////////////////////////////////////////////////////////////////////
 // _reference_proxy_root
 template <template <class> class Interface>
-struct _reference_proxy_root : iabstract<Interface>
+struct [[ANY_EMPTY_BASES]] _reference_proxy_root
+  : iabstract<Interface>
+  , _box_root_kind<_box_kind::_proxy, _root_kind::_reference>
 {
-  using interface_type                          = iabstract<Interface>;
-  static constexpr ::any::_box_kind _box_kind   = ::any::_box_kind::_proxy;
-  static constexpr ::any::_root_kind _root_kind = ::any::_root_kind::_reference;
+  using interface_type = iabstract<Interface>;
+  using _reference_proxy_root::_box_root_kind::_box_kind;
 
   constexpr _reference_proxy_root() noexcept
   {
@@ -1538,8 +1546,9 @@ struct any final : _value_proxy_model<Interface>
 private:
   template <class Other>
   static constexpr bool _as_large_as =
-      iabstract<Interface>::_buffer_size >= Interface<Other>::_buffer_size
-      && Other::_root_kind == _root_kind::_value;
+      (iabstract<Interface>::_buffer_size >= Interface<Other>::_buffer_size)
+      && (Interface<Other>::_buffer_alignment % iabstract<Interface>::_buffer_alignment == 0)
+      && (Other::_root_kind == _root_kind::_value);
 
 public:
   any() = default;
