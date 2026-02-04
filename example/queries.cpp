@@ -19,65 +19,79 @@
 #include "env.hpp"
 #include "queries.hpp"
 
-#include <cassert>
+#include <algorithm>
 #include <iostream>
 #include <stop_token>
 
 ANY_DIAG_PUSH
 ANY_DIAG_SUPPRESS_CLANG("-Wmissing-braces")
 
-template <class Model>
-struct iqueryable : any::interface<iqueryable, Model>
-{
-  using iqueryable::interface::interface;
-
-  constexpr virtual bool _try_query(any::type_index type, void *out) const
-  {
-    return any::value(*this)._try_query(type, out);
-  }
-};
-
 struct any_queryable
 {
 public:
   template <class Queryable, class... Queries>
-  constexpr explicit any_queryable(Queryable queryable, Queries... queries)
-    : queryable_(_dynamically_queryable(std::move(queryable), std::move(queries)...))
+  constexpr explicit any_queryable(Queryable queryable, Queries...)
+    : queryable_(_try_queryable<Queryable, Queries...>{{std::move(queryable)}})
   {
   }
 
   template <class Query>
-  constexpr auto query(Query) const noexcept(is_nothrow_query<Query>) -> value_type_of_t<Query>
+  [[nodiscard]]
+  constexpr auto query(Query) const noexcept(is_always_nothrow_query<Query>) -> query_value_t<Query>
   {
-    value_type_of_t<Query> value;
+    query_value_t<Query> value;
     queryable_._try_query(any::type_index_of<Query>, std::addressof(value));
     return value;
   }
 
-private:
-  friend struct any::access;
-
-  bool _empty_() const noexcept
+  template <class Query>
+  [[nodiscard]]
+  constexpr bool has_query(Query) const noexcept
   {
-    return any::empty(queryable_);
+    return std::ranges::contains(query(get_queries), any::type_index_of<Query>);
   }
 
-  template <class Queryable>
-  struct _dynamically_queryable_base
+  [[nodiscard]]
+  static constexpr bool has_query(get_queries_t) noexcept
   {
+    return true;
+  }
+
+private:
+  friend struct any::access; // so that any::empty can call _empty_()
+
+  template <class Model>
+  struct iqueryable : any::interface<iqueryable, Model>
+  {
+    using iqueryable::interface::interface;
+
+    constexpr virtual bool _try_query(any::type_index type, void *out) const
+    {
+      return any::value(*this)._try_query(type, out);
+    }
+  };
+
+  template <class Queryable>
+  struct _try_queryable_base
+  {
+    [[nodiscard]]
     constexpr auto _mk_try_query(any::type_index type, void *ptr) const
     {
-      return [=, this]<class Query>(Query) noexcept(is_nothrow_query<Query>)
+      // BUGBUG this can only be nothrow if the emplace/assign is nothrow:
+      return [=, this]<class Query>(Query) noexcept(is_always_nothrow_query<Query>)
       {
         if constexpr (any::_callable_with<Query, Queryable const &>)
         {
-          // std::cout << "Type is queryable.\n";
-          static_assert(!is_nothrow_query<Query> || noexcept(Query{}(queryable_)),
-                        "Queryable::query must be noexcept if Query::is_nothrow_query is true");
+          static_assert(!is_always_nothrow_query<Query> || noexcept(Query()(queryable_)),
+                        "Queryable::query must be noexcept if Query::always_nothrow is true");
           if (type == any::type_index_of<Query>)
           {
-            auto &out = *static_cast<value_type_of_t<Query> *>(ptr);
-            out.emplace(Query{}(queryable_));
+            auto &out = *static_cast<query_value_t<Query> *>(ptr);
+            // emplace if possible, otherwise assign:
+            if constexpr (requires { out.emplace(Query()(queryable_)); })
+              out.emplace(Query()(queryable_));
+            else
+              out = Query()(queryable_);
             return true;
           }
         }
@@ -89,22 +103,46 @@ private:
   };
 
   template <class Queryable, class... Queries>
-  struct _dynamically_queryable : _dynamically_queryable_base<Queryable>
+  struct _try_queryable : _try_queryable_base<Queryable>
   {
-    constexpr explicit _dynamically_queryable(Queryable queryable, Queries...)
-      : _dynamically_queryable_base<Queryable>{std::move(queryable)}
-    {
-    }
-
     constexpr bool _try_query(any::type_index type, void *out) const noexcept
     {
-      [[maybe_unused]]
-      auto qs         = detail::_with_default{get_queries, any::_mmake_set<>{}}(this->queryable_);
-      using queries_t = any::_mapply<any::_mquote<any::_mlist>, decltype(qs), Queries...>;
-      return []<class... Qs>(auto fn, any::_mlist<Qs...> *)
-      { return (fn(Qs{}) || ...); }(this->_mk_try_query(type, out), (queries_t *)nullptr);
+      // Handle get_queries specially
+      if (type == any::type_index_of<get_queries_t>)
+      {
+        auto &queries = *static_cast<query_value_t<get_queries_t> *>(out);
+        queries       = _all_queries_t::value;
+        return true;
+      }
+      else
+      {
+        // Turn the query set into a type list containing all the supported queries
+        using all_queries_t = any::_mapply<any::_mquote<any::_mlist>, _all_queries_t> *;
+        return _try_queries(this->_mk_try_query(type, out), all_queries_t());
+      }
     }
+
+  private:
+    // The set of supported queries is the union of Queries... and those supported by
+    // Queryable (if known)
+    using _get_queries_fn_t   = detail::_with_default<get_queries_t, query_set<>>;
+    using _implicit_queries_t = any::_call_result_t<_get_queries_fn_t, Queryable const &>;
+    // Unpack all the queries into a query_set to make them unique:
+    using _all_queries_t =
+        any::_mapply<any::_mquote<query_set>, _implicit_queries_t, Queries..., get_queries_t>;
   };
+
+  [[nodiscard]]
+  constexpr bool _empty_() const noexcept
+  {
+    return any::empty(queryable_);
+  }
+
+  template <class Fn, class... Qs>
+  static constexpr bool _try_queries(Fn fn, any::_mlist<Qs...> *) noexcept
+  {
+    return (fn(Qs()) || ...);
+  }
 
   any::any<iqueryable> queryable_;
 };
@@ -114,7 +152,6 @@ namespace my
 struct scheduler
 {
 };
-} // namespace my
 
 struct callback
 {
@@ -122,6 +159,7 @@ struct callback
   {
   }
 };
+} // namespace my
 
 int main()
 {
@@ -131,16 +169,22 @@ int main()
 
   any_queryable a{env};
   assert(!any::empty(a));
+  assert(a.has_query(get_scheduler));
+  assert(!a.has_query('?'));
+  for (auto type : get_queries(a))
+  {
+    std::cout << "Supports query: " << type.name() << "\n";
+  }
 
   auto alloc = get_allocator(a);
-  static_assert(std::same_as<decltype(alloc), any_allocator>);
-  void *ptr = alloc.allocate(128);
+  static_assert(std::same_as<decltype(alloc), any_allocator<std::byte>>);
+  std::byte *ptr = alloc.allocate(128);
   std::cout << "Allocated 128 bytes at " << ptr << "\n";
   alloc.deallocate(ptr, 128);
 
   auto token = get_stop_token(a);
   static_assert(std::same_as<decltype(token), any_stop_token>);
-  any_stop_token::callback_type<callback> cb{token, callback{}};
+  any_stop_token::callback_type<my::callback> cb{token, my::callback{}};
 }
 
 ANY_DIAG_POP

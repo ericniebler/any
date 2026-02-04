@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
 
 ANY_DIAG_PUSH
 ANY_DIAG_SUPPRESS_MSVC(4141) // 'inline' used more than once
@@ -94,9 +95,17 @@ struct _mvalue
 {
   using value_type            = decltype(Value);
   static constexpr auto value = Value;
+
   constexpr operator value_type() const noexcept
   {
     return Value;
+  }
+
+  template <class Type>
+    requires std::convertible_to<value_type const &, std::span<Type>>
+  constexpr operator std::span<Type>() const noexcept
+  {
+    return value;
   }
 
   template <auto Other>

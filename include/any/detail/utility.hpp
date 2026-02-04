@@ -43,6 +43,9 @@ template <class Fn, class... Args>
 concept _callable_with =
     requires(Fn &&fn, Args &&...args) { std::forward<Fn>(fn)(std::forward<Args>(args)...); };
 
+template <class Fn, class... Args>
+using _call_result_t = decltype(std::declval<Fn>()(std::declval<Args>()...));
+
 struct _ignore
 {
   constexpr _ignore(auto &&...) noexcept

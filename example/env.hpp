@@ -16,9 +16,9 @@
 
 #pragma once
 
-#include "any/detail/meta.hpp"
-
 #include "queries.hpp"
+
+#include <type_traits> // For std::unwrap_reference_t
 
 template <class Query, class Value>
 struct prop
@@ -30,7 +30,7 @@ struct prop
 
   static constexpr auto query(get_queries_t)
   {
-    return any::_mmake_set<Query>();
+    return query_set<Query>();
   }
 
   [[no_unique_address]] Query query_;
@@ -47,7 +47,7 @@ struct env<>
 {
   constexpr auto query(get_queries_t) const noexcept
   {
-    return any::_mmake_set<>();
+    return query_set<>();
   }
 };
 
@@ -74,6 +74,7 @@ struct env<Env &>
 template <class Env1, class Env2>
 struct env<Env1, Env2>
 {
+  // Prefer Env1 when both environments can answer the query:
   template <class Query>
     requires detail::_queryable_with<Env1, Query>
   [[nodiscard]]
@@ -83,6 +84,7 @@ struct env<Env1, Env2>
     return env1_.query(Query{});
   }
 
+  // Use Env2 when Env1 cannot answer the query:
   template <class Query>
     requires detail::_queryable_with<Env1, Query> || detail::_queryable_with<Env2, Query>
   [[nodiscard]]
@@ -92,11 +94,13 @@ struct env<Env1, Env2>
     return env2_.query(Query{});
   }
 
+  // Provide the combined query set, but only if both environments support get_queries:
   constexpr auto query(get_queries_t) const noexcept = delete;
   constexpr auto query(get_queries_t) const noexcept
     requires detail::_queryable_with<Env1, get_queries_t>
           && detail::_queryable_with<Env2, get_queries_t>
   {
+    // Combine the query sets from both environments:
     return env1_.query(get_queries_t{}) + env2_.query(get_queries_t{});
   }
 

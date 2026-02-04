@@ -164,8 +164,8 @@ ANY_DIAG_PUSH
 ANY_DIAG_SUPPRESS_GCC("-Wnon-template-friend")
 ANY_DIAG_SUPPRESS_NVHPC(probable_guiding_friend)
 
-// The following two classes use the stateful metaprogramming trick to create a spooky
-// association between a type_index object and the type it represents.
+// The following two classes use friend injection, aka the stateful metaprogramming trick,
+// to create a spooky association between a type_index object and the type it represents.
 template <type_index Id>
 struct _typeid_c
 {
