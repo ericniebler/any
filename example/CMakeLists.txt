@@ -11,6 +11,7 @@ endfunction()
 add_example(basic)
 add_example(comparable)
 add_example(function)
+add_example(queries)
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scratch.cpp")
     add_example(scratch)

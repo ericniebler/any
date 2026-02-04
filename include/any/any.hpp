@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#pragma once
+
 #include "detail/config.hpp"
 #include "detail/typeinfo.hpp"
 #include "detail/utility.hpp"
@@ -198,7 +200,7 @@ inline constexpr Interface<Base> const &interface_cast(Interface<Base> const &if
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // accessors
-struct _access
+struct access
 {
   struct _value_t
   {
@@ -250,7 +252,7 @@ struct _access
     }
   };
 
-  struct caddressof_t
+  struct _caddressof_t
   {
     template <template <class> class Interface, class Base>
     [[nodiscard]]
@@ -260,9 +262,9 @@ struct _access
     }
   };
 
-  struct addressof_t : caddressof_t
+  struct _addressof_t : _caddressof_t
   {
-    using caddressof_t::operator();
+    using _caddressof_t::operator();
 
     template <template <class> class Interface, class Base>
     [[nodiscard]]
@@ -273,13 +275,13 @@ struct _access
   };
 };
 
-[[maybe_unused]] inline constexpr auto value      = _access::_value_t{};
-[[maybe_unused]] inline constexpr auto empty      = _access::_empty_t{};
-[[maybe_unused]] inline constexpr auto reset      = _access::_reset_t{};
-[[maybe_unused]] inline constexpr auto type       = _access::_type_t{};
-[[maybe_unused]] inline constexpr auto data       = _access::_data_t{};
-[[maybe_unused]] inline constexpr auto addressof  = _access::addressof_t{};
-[[maybe_unused]] inline constexpr auto caddressof = _access::caddressof_t{};
+[[maybe_unused]] inline constexpr auto value      = access::_value_t{};
+[[maybe_unused]] inline constexpr auto empty      = access::_empty_t{};
+[[maybe_unused]] inline constexpr auto reset      = access::_reset_t{};
+[[maybe_unused]] inline constexpr auto type       = access::_type_t{};
+[[maybe_unused]] inline constexpr auto data       = access::_data_t{};
+[[maybe_unused]] inline constexpr auto addressof  = access::_addressof_t{};
+[[maybe_unused]] inline constexpr auto caddressof = access::_caddressof_t{};
 
 // value_of_t
 template <class T>
@@ -385,7 +387,7 @@ struct _iroot
 private:
   template <template <class> class, class, class, size_t, size_t>
   friend struct interface;
-  friend struct _access;
+  friend struct access;
 
   template <class Self>
   constexpr Self &&_value_(this Self &&) noexcept
@@ -425,8 +427,14 @@ private:
 template <class Value>
 struct _box
 {
-  constexpr explicit _box(Value &&value) noexcept
+  constexpr explicit _box(Value value) noexcept
     : value_(std::move(value))
+  {
+  }
+
+  template <class... Args>
+  constexpr explicit _box(Args &&...args) noexcept
+    : value_(std::forward<Args>(args)...)
   {
   }
 
@@ -446,8 +454,14 @@ template <class Value>
   requires std::is_empty_v<Value> && (!std::is_final_v<Value>)
 struct [[ANY_EMPTY_BASES]] _box<Value> : private Value
 {
-  constexpr explicit _box(Value &&value) noexcept
+  constexpr explicit _box(Value value) noexcept
     : Value(std::move(value))
+  {
+  }
+
+  template <class... Args>
+  constexpr explicit _box(Args &&...args) noexcept
+    : Value(std::forward<Args>(args)...)
   {
   }
 
@@ -636,16 +650,26 @@ struct interface : Base
   constexpr virtual void _slice_to_(_value_proxy_root<Interface> &out) noexcept(_nothrow_slice)
   {
     ANY_ASSERT(!empty(*this));
-    if constexpr (Base::_box_kind == _box_kind::_proxy)
+    if constexpr (Base::_box_kind != _box_kind::_abstract)
     {
-      value(*this)._slice_to_(out);
-      reset(*this);
-    }
-    else if constexpr (Base::_box_kind == _box_kind::_object)
-    {
-      // Move from type-erased values, but not from type-erased references
-      constexpr bool is_value = (Base::_root_kind == _root_kind::_value);
-      out.emplace(ANY_DECAY_COPY(::any::_move_if<is_value>(value(*this)))); // potentially throwing
+      using root_interface_t           = Base::interface_type;
+      constexpr bool is_root_interface = std::same_as<root_interface_t, _interface_type>;
+      ANY_ASSERT(!is_root_interface);
+      if constexpr (!is_root_interface)
+      {
+        if constexpr (Base::_box_kind == _box_kind::_proxy)
+        {
+          value(*this)._slice_to_(out);
+          reset(*this);
+        }
+        else // if constexpr (Base::_box_kind == _box_kind::_object)
+        {
+          // Move from type-erased values, but not from type-erased references
+          constexpr bool is_value = (Base::_root_kind == _root_kind::_value);
+          // potentially throwing:
+          out.emplace(ANY_DECAY_COPY(::any::_move_if<is_value>(value(*this))));
+        }
+      }
     }
   }
 
@@ -845,7 +869,7 @@ struct [[ANY_EMPTY_BASES]] _value_proxy_root
 private:
   template <template <class> class>
   friend struct any;
-  friend struct _access;
+  friend struct access;
 
   template <class Value, class... Args>
   constexpr Value &_emplace_(Args &&...args)
@@ -1560,6 +1584,13 @@ public:
     : any()
   {
     (*this)._emplace_(std::move(value));
+  }
+
+  template <class Type, class... Args>
+  constexpr explicit any(std::in_place_type_t<Type>, Args &&...args)
+    : any()
+  {
+    (*this).template _emplace_<Type>(std::forward<Args>(args)...);
   }
 
   // Implicit derived-to-base conversion constructor

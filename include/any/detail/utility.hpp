@@ -17,10 +17,12 @@
 #pragma once
 
 #include "config.hpp"
+#include "meta.hpp"
 
 #include <cstdarg>
 #include <cstdio>
 
+#include <concepts>
 #include <exception>
 #include <new>
 #include <type_traits>
@@ -31,6 +33,23 @@ ANY_DIAG_SUPPRESS_MSVC(4141) // 'inline' used more than once
 
 namespace any
 {
+template <class T, class U>
+concept _decays_to = std::same_as<std::decay_t<T>, U>;
+
+template <class T>
+concept _decayed = _decays_to<T, T>;
+
+template <class Fn, class... Args>
+concept _callable_with =
+    requires(Fn &&fn, Args &&...args) { std::forward<Fn>(fn)(std::forward<Args>(args)...); };
+
+struct _ignore
+{
+  constexpr _ignore(auto &&...) noexcept
+  {
+  }
+};
+
 //////////////////////////////////////////////////////////////////////////////////////////
 // start_lifetime_as
 #if __cpp_lib_start_lifetime_as
@@ -86,61 +105,6 @@ inline constexpr Return _die(char const *msg, ...) noexcept
   }
 }
 
-template <class T, class U>
-concept _decays_to = std::same_as<std::decay_t<T>, U>;
-
-template <class T>
-concept _decayed = _decays_to<T, T>;
-
-template <class...>
-struct _undef;
-
-template <class Fn, class... Args>
-using _mcall = Fn::template call<Args...>;
-
-template <bool>
-struct _if_
-{
-  template <class Then, class...>
-  using call = Then;
-};
-
-template <>
-struct _if_<false>
-{
-  template <class, class Else>
-  using call = Else;
-};
-
-template <bool Condition, class Then = void, class... Else>
-using _if_t = _mcall<_if_<Condition>, Then, Else...>;
-
-//////////////////////////////////////////////////////////////////////////////////////////
-// _copy_cvref_t
-#define ANY_COPY_CVREF(NAME, QUAL)                                                                 \
-  struct NAME                                                                                      \
-  {                                                                                                \
-    template <class T>                                                                             \
-    using call = T QUAL;                                                                           \
-  };                                                                                               \
-  template <class T>                                                                               \
-  extern NAME _copy_cvref_fn<T QUAL, 0>
-
-template <class T, int = 0>
-extern _undef<T> _copy_cvref_fn;
-
-ANY_COPY_CVREF(_cp, );
-ANY_COPY_CVREF(_cpl, &);
-ANY_COPY_CVREF(_cpr, &&);
-ANY_COPY_CVREF(_cpc, const);
-ANY_COPY_CVREF(_cpcl, const &);
-ANY_COPY_CVREF(_cpcr, const &&);
-
-template <class From, class To>
-using _copy_cvref_t = _mcall<decltype(_copy_cvref_fn<From>), To>;
-
-#undef ANY_COPY_CVREF
-
 //////////////////////////////////////////////////////////////////////////////////////////
 // _unconst
 template <class T>
@@ -173,6 +137,21 @@ inline constexpr auto &&_move_if(T &t) noexcept
   else
     return t;
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// _emplace_from
+template <class Fn>
+struct _emplace_from
+{
+  using type = decltype(std::declval<Fn>()());
+
+  operator type() && noexcept(noexcept(std::declval<Fn>()()))
+  {
+    return std::move(fn)();
+  }
+
+  Fn fn{};
+};
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _polymorphic_downcast

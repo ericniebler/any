@@ -133,6 +133,8 @@ inline constexpr type_info const &typeid_of<T const> = typeid_of<T>;
 // type_index
 struct type_index
 {
+  constexpr type_index() noexcept = default;
+
   constexpr type_index(type_info const &info) noexcept
     : info_(&info)
   {
@@ -153,7 +155,7 @@ struct type_index
     return *info_ <=> *other.info_;
   }
 
-  type_info const *info_;
+  type_info const *info_ = nullptr;
 };
 
 namespace _detail
