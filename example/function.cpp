@@ -19,15 +19,13 @@
 #include <cassert>
 #include <cstdio>
 
-#if ANY_COMPILER_CLANG
-#  pragma clang diagnostic ignored "-Winfinite-recursion"
-#endif
+ANY_DIAG_SUPPRESS_CLANG("-Winfinite-recursion")
 
 template <class Signature>
 struct _ifunction;
 
-template <class Return, class... Args>
-struct _ifunction<Return(Args...)>
+template <class Return, class... Args, bool Noexcept>
+struct _ifunction<Return(Args...) noexcept(Noexcept)>
 {
   // "abstract" interface for callable types
   template <class Base>
@@ -35,8 +33,9 @@ struct _ifunction<Return(Args...)>
   {
     using _interface::interface::interface;
 
-    constexpr virtual Return operator()(Args... args) const
+    constexpr virtual Return operator()(Args... args) const noexcept(Noexcept)
     {
+      static_assert(!Noexcept || noexcept(any::value(*this)(std::forward<Args>(args)...)));
       return any::value(*this)(std::forward<Args>(args)...);
     }
   };

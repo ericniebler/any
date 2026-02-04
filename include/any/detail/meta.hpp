@@ -39,22 +39,25 @@ using _mcall = Fn::template call<Args...>;
 template <bool>
 struct _if_
 {
-  template <class Then, class...>
+  template <class Then, class Else>
   using call = Then;
 };
 
 template <>
 struct _if_<false>
 {
-  template <class, class Else>
+  template <class Then, class Else>
   using call = Else;
 };
 
-template <bool Condition, class Then = void, class... Else>
-using _if_t = _mcall<_if_<Condition>, Then, Else...>;
+template <bool Condition, class Then, class Else>
+using _if_t = _mcall<_if_<Condition>, Then, Else>;
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _copy_cvref_t
+template <class T, int = 0>
+extern _undef<T> _copy_cvref_fn;
+
 #define ANY_COPY_CVREF(NAME, QUAL)                                                                 \
   struct NAME                                                                                      \
   {                                                                                                \
@@ -64,9 +67,6 @@ using _if_t = _mcall<_if_<Condition>, Then, Else...>;
   template <class T>                                                                               \
   extern NAME _copy_cvref_fn<T QUAL, 0>
 
-template <class T, int = 0>
-extern _undef<T> _copy_cvref_fn;
-
 ANY_COPY_CVREF(_cp, );
 ANY_COPY_CVREF(_cpl, &);
 ANY_COPY_CVREF(_cpr, &&);
@@ -74,10 +74,10 @@ ANY_COPY_CVREF(_cpc, const);
 ANY_COPY_CVREF(_cpcl, const &);
 ANY_COPY_CVREF(_cpcr, const &&);
 
+#undef ANY_COPY_CVREF
+
 template <class From, class To>
 using _copy_cvref_t = _mcall<decltype(_copy_cvref_fn<From>), To>;
-
-#undef ANY_COPY_CVREF
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _mquote
