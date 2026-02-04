@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#pragma once
+
 #include "any/any.hpp"
 
 #include <cassert>
@@ -56,7 +58,34 @@ struct _with_default : Fn
   }
   Default default_;
 };
+
+template <class Query>
+struct _value_type_of
+{
+  using type = any::any<any::icopyable>;
+};
+
+template <class Query>
+  requires requires { typename Query::value_type; }
+struct _value_type_of<Query>
+{
+  using type = Query::value_type;
+};
 } // namespace detail
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// The (possibly type-erased) value type to be returned by type-erasing Query
+template <class Query>
+using value_type_of_t = detail::_value_type_of<Query>::type;
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// Whether the query should always be noexcept
+template <class Query>
+inline constexpr bool is_nothrow_query = false;
+
+template <class Query>
+  requires requires { Query::is_nothrow_query ? true : false; }
+inline constexpr bool is_nothrow_query<Query> = Query::is_nothrow_query;
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // iallocator
