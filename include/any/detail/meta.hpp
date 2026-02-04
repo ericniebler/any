@@ -23,7 +23,7 @@
 #include <array>
 #include <span>
 
-ANY_DIAG_PUSH
+ANY_DIAG_PUSH()
 ANY_DIAG_SUPPRESS_MSVC(4141) // 'inline' used more than once
 
 namespace any
@@ -231,4 +231,4 @@ using _mmake_set = _mvalue<any::_mset_unique(
 
 } // namespace any
 
-ANY_DIAG_POP
+ANY_DIAG_POP()

@@ -28,7 +28,7 @@
 #include <type_traits>
 #include <utility> // IWYU pragma: keep for std::unreachable
 
-ANY_DIAG_PUSH
+ANY_DIAG_PUSH()
 ANY_DIAG_SUPPRESS_MSVC(4141) // 'inline' used more than once
 
 namespace any
@@ -185,4 +185,4 @@ inline constexpr T _decay_copy(T value) noexcept(std::is_nothrow_move_constructi
 
 } // namespace any
 
-ANY_DIAG_POP
+ANY_DIAG_POP()

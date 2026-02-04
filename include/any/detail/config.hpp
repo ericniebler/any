@@ -41,25 +41,26 @@
 #  define ANY_PRAGMA(_ARG) _Pragma(ANY_PP_STRINGIZE(_ARG))
 #endif
 
+// Diagnostic pragmas
 #if defined(__NVCOMPILER)
-#  define ANY_DIAG_PUSH                     ANY_PRAGMA(diagnostic push)
-#  define ANY_DIAG_POP                      ANY_PRAGMA(diagnostic pop)
+#  define ANY_DIAG_PUSH()                   ANY_PRAGMA(diagnostic push)
+#  define ANY_DIAG_POP()                    ANY_PRAGMA(diagnostic pop)
 #  define ANY_DIAG_SUPPRESS_NVHPC(_WARNING) ANY_PRAGMA(diag_suppress _WARNING)
 #elif defined(__clang__)
-#  define ANY_DIAG_PUSH                     ANY_PRAGMA(clang diagnostic push)
-#  define ANY_DIAG_POP                      ANY_PRAGMA(clang diagnostic pop)
+#  define ANY_DIAG_PUSH()                   ANY_PRAGMA(clang diagnostic push)
+#  define ANY_DIAG_POP()                    ANY_PRAGMA(clang diagnostic pop)
 #  define ANY_DIAG_SUPPRESS_CLANG(_WARNING) ANY_PRAGMA(clang diagnostic ignored _WARNING)
 #elif defined(__GNUC__)
-#  define ANY_DIAG_PUSH                   ANY_PRAGMA(GCC diagnostic push)
-#  define ANY_DIAG_POP                    ANY_PRAGMA(GCC diagnostic pop)
+#  define ANY_DIAG_PUSH()                 ANY_PRAGMA(GCC diagnostic push)
+#  define ANY_DIAG_POP()                  ANY_PRAGMA(GCC diagnostic pop)
 #  define ANY_DIAG_SUPPRESS_GCC(_WARNING) ANY_PRAGMA(GCC diagnostic ignored _WARNING)
 #elif defined(_MSC_VER)
-#  define ANY_DIAG_PUSH                    ANY_PRAGMA(warning(push))
-#  define ANY_DIAG_POP                     ANY_PRAGMA(warning(pop))
+#  define ANY_DIAG_PUSH()                  ANY_PRAGMA(warning(push))
+#  define ANY_DIAG_POP()                   ANY_PRAGMA(warning(pop))
 #  define ANY_DIAG_SUPPRESS_MSVC(_WARNING) ANY_PRAGMA(warning(disable : _WARNING))
 #else
-#  define ANY_DIAG_PUSH
-#  define ANY_DIAG_POP
+#  define ANY_DIAG_PUSH()
+#  define ANY_DIAG_POP()
 #endif
 
 #if !defined(ANY_DIAG_SUPPRESS_CLANG)

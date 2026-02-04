@@ -23,7 +23,7 @@
 #include <iostream>
 #include <stop_token>
 
-ANY_DIAG_PUSH
+ANY_DIAG_PUSH()
 ANY_DIAG_SUPPRESS_CLANG("-Wmissing-braces")
 
 struct any_queryable
@@ -159,6 +159,10 @@ struct callback
   {
   }
 };
+
+inline constexpr struct none_such_t
+{
+} none_such{};
 } // namespace my
 
 int main()
@@ -170,7 +174,7 @@ int main()
   any_queryable a{env};
   assert(!any::empty(a));
   assert(a.has_query(get_scheduler));
-  assert(!a.has_query('?'));
+  assert(!a.has_query(my::none_such));
   for (auto type : get_queries(a))
   {
     std::cout << "Supports query: " << type.name() << "\n";
@@ -187,4 +191,4 @@ int main()
   any_stop_token::callback_type<my::callback> cb{token, my::callback{}};
 }
 
-ANY_DIAG_POP
+ANY_DIAG_POP()

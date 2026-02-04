@@ -26,7 +26,7 @@
 // This header defines some queries and some type-erasing wrappers for holding the
 // values of type-erased queries.
 
-ANY_DIAG_PUSH
+ANY_DIAG_PUSH()
 ANY_DIAG_SUPPRESS_CLANG("-Winfinite-recursion")
 
 namespace detail
@@ -232,7 +232,8 @@ private:
   friend struct detail::_register_callback_fn;
 
   [[nodiscard]]
-  constexpr virtual any::any<istop_callback> _register_callback(any::any<icallback> callback)
+  constexpr virtual auto _register_callback(any::any<icallback> callback)
+      -> any::any<istop_callback>
   {
     return any::value(*this)._register_callback(std::move(callback));
   }
@@ -271,6 +272,35 @@ struct _stop_callback_for<std::stop_token>
   using call = std::stop_callback<Callback>;
 };
 } // namespace detail
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// never_stop_token
+struct never_stop_token
+{
+  struct _callback
+  {
+    constexpr explicit _callback(never_stop_token, any::_ignore) noexcept
+    {
+    }
+  };
+
+  template <class>
+  using callback_type = _callback;
+
+  [[nodiscard]]
+  static constexpr bool stop_requested() noexcept
+  {
+    return false;
+  }
+
+  [[nodiscard]]
+  static constexpr bool stop_possible() noexcept
+  {
+    return false;
+  }
+
+  bool operator==(never_stop_token const &) const noexcept = default;
+};
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // any_stop_token
@@ -316,6 +346,8 @@ public:
   }
 
 private:
+  friend struct any::access; // so that any::empty can call _empty_()
+
   ////////////////////////////////////////////////////////////////////////////////////////
   // adds to Token a factory function for registering a stop callback
   template <class Token>
@@ -333,7 +365,7 @@ private:
     }
 
     [[nodiscard]]
-    constexpr any::any<istop_callback> _register_callback(any::any<icallback> callback)
+    constexpr auto _register_callback(any::any<icallback> callback) -> any::any<istop_callback>
     {
       Token &token     = *this;
       using callback_t = any::_mcall<detail::_stop_callback_for<Token>, any::any<icallback>>;
@@ -351,6 +383,11 @@ private:
   private:
     any::any<istop_callback> callback_{};
   };
+
+  constexpr bool _empty_() const noexcept
+  {
+    return any::empty(token_);
+  }
 
   any::any<istop_token> token_;
 };
@@ -379,12 +416,15 @@ inline constexpr auto get_queries = get_queries_t{};
 struct get_allocator_t
 {
   // Used as the query result when the get_allocator query is type-erased
-  using value_type = any_allocator<std::byte>;
+  using value_type                     = any_allocator<std::byte>;
+  static constexpr bool always_nothrow = true;
 
   template <detail::_queryable_with<get_allocator_t> Queryable>
-  static constexpr auto operator()(Queryable const &q)
+  static constexpr auto operator()(Queryable const &q) noexcept
       -> detail::_query_result_t<Queryable, get_allocator_t>
   {
+    static_assert(noexcept(q.query(get_allocator_t{})),
+                  "Queryable::query must be noexcept for get_allocator queries");
     return q.query(get_allocator_t{});
   }
 };
@@ -395,10 +435,14 @@ inline constexpr get_allocator_t get_allocator{};
 // get_scheduler
 struct get_scheduler_t
 {
+  static constexpr bool always_nothrow = true;
+
   template <detail::_queryable_with<get_scheduler_t> Queryable>
-  static constexpr auto operator()(Queryable const &q)
+  static constexpr auto operator()(Queryable const &q) noexcept
       -> detail::_query_result_t<Queryable, get_scheduler_t>
   {
+    static_assert(noexcept(q.query(get_scheduler_t{})),
+                  "Queryable::query must be noexcept for get_scheduler queries");
     return q.query(get_scheduler_t{});
   }
 };
@@ -412,13 +456,19 @@ struct get_stop_token_t
   using value_type = any_stop_token;
 
   template <detail::_queryable_with<get_stop_token_t> Queryable>
-  static constexpr auto operator()(Queryable const &q)
+  static constexpr auto operator()(Queryable const &q) noexcept(
+      detail::_nothrow_queryable_with<Queryable, get_stop_token_t>)
       -> detail::_query_result_t<Queryable, get_stop_token_t>
   {
     return q.query(get_stop_token_t{});
+  }
+
+  static constexpr auto operator()(any::_ignore) noexcept -> never_stop_token
+  {
+    return never_stop_token{};
   }
 };
 
 inline constexpr auto get_stop_token = get_stop_token_t{};
 
-ANY_DIAG_POP
+ANY_DIAG_POP()

@@ -23,18 +23,30 @@
 template <class Query, class Value>
 struct prop
 {
-  constexpr auto query(Query) const -> Value const &
+  using query_type = Query;
+  using value_type = Value;
+
+  constexpr auto query(Query) const noexcept -> Value const &
+    requires(detail::_not_same_as<Query, get_queries_t>)
   {
+    static_assert(any::_callable_with<Query, _prop_like &>,
+                  "Query does not satisfy requirements of a query");
     return value_;
   }
 
-  static constexpr auto query(get_queries_t)
+  static constexpr auto query(get_queries_t) noexcept
   {
     return query_set<Query>();
   }
 
   [[no_unique_address]] Query query_;
   [[no_unique_address]] Value value_;
+
+private:
+  struct _prop_like
+  {
+    auto query(Query) const noexcept -> Value const &;
+  };
 };
 
 //////////////////////////////////////////////////////////////////////

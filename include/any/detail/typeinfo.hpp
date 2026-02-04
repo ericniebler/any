@@ -160,7 +160,7 @@ struct type_index
 
 namespace _detail
 {
-ANY_DIAG_PUSH
+ANY_DIAG_PUSH()
 ANY_DIAG_SUPPRESS_GCC("-Wnon-template-friend")
 ANY_DIAG_SUPPRESS_NVHPC(probable_guiding_friend)
 
@@ -184,7 +184,7 @@ struct _typeid_of
   }
 };
 
-ANY_DIAG_POP
+ANY_DIAG_POP()
 } // namespace _detail
 
 // For a given type, return a type_index object
