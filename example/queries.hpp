@@ -246,13 +246,11 @@ namespace detail
 struct _register_callback_fn
 {
   [[nodiscard]]
-  constexpr auto operator()() const -> any::any<istop_callback>
+  constexpr auto operator()(any::any<istop_token> &token, any::any<icallback> &callback) const
+      -> any::any<istop_callback>
   {
     return token._register_callback(std::move(callback));
   }
-
-  any::any<istop_token> &token;
-  any::any<icallback> &callback;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -376,8 +374,8 @@ private:
   struct _callback
   {
     explicit _callback(any_stop_token &token, any::any<icallback> callback)
+      : callback_(detail::_register_callback_fn()(token.token_, callback))
     {
-      callback_.emplace(any::_emplace_from{detail::_register_callback_fn{token.token_, callback}});
     }
 
   private:
