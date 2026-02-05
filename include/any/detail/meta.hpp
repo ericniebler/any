@@ -108,6 +108,18 @@ struct _mvalue
     return value;
   }
 
+  static constexpr auto begin() noexcept
+    requires std::ranges::range<value_type>
+  {
+    return std::ranges::begin(value);
+  }
+
+  static constexpr auto end() noexcept
+    requires std::ranges::range<value_type>
+  {
+    return std::ranges::end(value);
+  }
+
   template <auto Other>
   constexpr auto operator+(_mvalue<Other>) noexcept -> _mvalue<Value + Other>
   {
@@ -121,24 +133,61 @@ template <class... Types>
 struct _mlist;
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// _muncurry
+// _mindirect
+template <class Fn>
+struct _mindirect;
+
+namespace detail
+{
+template <class...>
+concept _mtrue = true;
+
+template <bool>
+struct _mindirect_
+{
+  template <class Fn, class... Args>
+  using call = _mcall<Fn, Args...>;
+};
+} // namespace detail
+
+template <class Fn>
+struct _mindirect
+{
+  template <class... Args>
+  using call = _mcall<detail::_mindirect_<detail::_mtrue<Args...>>, Fn, Args...>;
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// _mquote_indirect
+template <template <class...> class Fn>
+using _mquote_indirect = _mindirect<_mquote<Fn>>;
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// _mfor:: [a] -> (a -> b) -> [b]
 template <class List>
-struct _muncurry;
+struct _mfor;
 
 template <template <class...> class List, class... Ts>
-struct _muncurry<List<Ts...>>
+struct _mfor<List<Ts...>>
 {
   template <class Fn, class... Us>
   using call = _mcall<Fn, Us..., Ts...>;
 };
 
+template <class Return, class... Args>
+struct _mfor<Return(Args...)>
+{
+  template <class Fn, class... Us>
+  using call = _mcall<Fn, Us..., Return, Args...>;
+};
+
 namespace detail
 {
 template <class Indices>
-struct _muncurry_range;
+struct _mfor_range;
 
 template <size_t... Is>
-struct _muncurry_range<std::index_sequence<Is...>>
+struct _mfor_range<std::index_sequence<Is...>>
 {
   template <class Fn, class Range, class... Us>
   using call = _mcall<Fn, Us..., any::typeof_t<Range::value[Is]>...>;
@@ -146,18 +195,29 @@ struct _muncurry_range<std::index_sequence<Is...>>
 } // namespace detail
 
 template <auto Range>
-struct _muncurry<_mvalue<Range>>
+  requires std::ranges::range<decltype(Range)>
+        && std::same_as<std::ranges::range_value_t<decltype(Range)>, any::type_index>
+struct _mfor<_mvalue<Range>>
 {
   using _indices_t = std::make_index_sequence<Range.size()>;
 
   template <class Fn, class... Us>
-  using call = _mcall<detail::_muncurry_range<_indices_t>, Fn, _mvalue<Range>, Us...>;
+  using call = _mcall<detail::_mfor_range<_indices_t>, Fn, _mvalue<Range>, Us...>;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _mapply
 template <class Fn, class List, class... Us>
-using _mapply = _mcall<_muncurry<List>, Fn, Us...>;
+using _mapply = _mcall<_mfor<List>, Fn, Us...>;
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// _muncurry
+template <class Fn>
+struct _muncurry
+{
+  template <class List, class... Us>
+  using call = _mapply<Fn, List, Us...>;
+};
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _mcount

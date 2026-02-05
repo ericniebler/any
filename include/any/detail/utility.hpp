@@ -34,6 +34,9 @@ ANY_DIAG_SUPPRESS_MSVC(4141) // 'inline' used more than once
 namespace any
 {
 template <class T, class U>
+concept _not_same_as = !std::same_as<T, U>;
+
+template <class T, class U>
 concept _decays_to = std::same_as<std::decay_t<T>, U>;
 
 template <class T>
@@ -46,9 +49,14 @@ concept _callable_with =
 template <class Fn, class... Args>
 using _call_result_t = decltype(std::declval<Fn>()(std::declval<Args>()...));
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// _ignore
 struct _ignore
 {
-  constexpr _ignore(auto &&...) noexcept
+  _ignore() = default;
+
+  template <_not_same_as<_ignore> First, class... Rest>
+  [[ANY_ALWAYS_INLINE]] inline constexpr _ignore(First const &, Rest const &...) noexcept
   {
   }
 };

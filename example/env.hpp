@@ -27,7 +27,7 @@ struct prop
   using value_type = Value;
 
   constexpr auto query(Query) const noexcept -> Value const &
-    requires(detail::_not_same_as<Query, get_queries_t>)
+    requires(any::_not_same_as<Query, get_queries_t>)
   {
     static_assert(any::_callable_with<Query, _prop_like &>,
                   "Query does not satisfy requirements of a query");

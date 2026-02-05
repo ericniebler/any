@@ -33,6 +33,9 @@ public:
   constexpr explicit any_queryable(Queryable queryable, Queries...)
     : queryable_(_try_queryable<Queryable, Queries...>{{std::move(queryable)}})
   {
+    static_assert(any::_callable_with<get_queries_t, Queryable const &> || sizeof...(Queries) != 0,
+                  "any_queryable must be constructed with at least one query if the "
+                  "Queryable does not support get_queries");
   }
 
   template <class Query>
@@ -138,10 +141,10 @@ private:
     return any::empty(queryable_);
   }
 
-  template <class Fn, class... Qs>
-  static constexpr bool _try_queries(Fn fn, any::_mlist<Qs...> *) noexcept
+  template <class Fn, class... Queries>
+  static constexpr bool _try_queries(Fn fn, any::_mlist<Queries...> *) noexcept
   {
-    return (fn(Qs()) || ...);
+    return (fn(Queries()) || ...);
   }
 
   any::any<iqueryable> queryable_;

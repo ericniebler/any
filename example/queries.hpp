@@ -31,17 +31,14 @@ ANY_DIAG_SUPPRESS_CLANG("-Winfinite-recursion")
 
 namespace detail
 {
-template <class T, class U>
-concept _not_same_as = !std::same_as<T, U>;
-
 template <class Queryable, class Query>
 concept _queryable_with = requires(Queryable const &q) {
-  { q.query(Query{}) } -> _not_same_as<void>;
+  { q.query(Query{}) } -> any::_not_same_as<void>;
 };
 
 template <class Queryable, class Query>
 concept _nothrow_queryable_with = requires(Queryable const &q) {
-  { q.query(Query{}) } noexcept -> _not_same_as<void>;
+  { q.query(Query{}) } noexcept -> any::_not_same_as<void>;
 };
 
 template <class Queryable, class Query>
@@ -121,7 +118,7 @@ struct any_allocator
 
   any_allocator()  = default;
 
-  template <detail::_not_same_as<any_allocator> Alloc>
+  template <any::_not_same_as<any_allocator> Alloc>
   constexpr any_allocator(Alloc alloc)
     : malloc_(_malloc_t<Alloc>(std::move(alloc)))
   {
@@ -129,7 +126,7 @@ struct any_allocator
     static_assert(std::same_as<other_value_type, Type>);
   }
 
-  template <detail::_not_same_as<Type> Other>
+  template <any::_not_same_as<Type> Other>
   constexpr any_allocator(any_allocator<Other> other) noexcept
     : malloc_(std::move(other.malloc_))
   {
@@ -200,10 +197,7 @@ struct istop_callback : any::interface<istop_callback, Model>
   using istop_callback::interface::interface;
 };
 
-namespace detail
-{
-struct _register_callback_fn;
-} // namespace detail
+struct any_stop_callback;
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // istop_token
@@ -229,7 +223,7 @@ private:
   template <class>
   friend struct istop_token;
 
-  friend struct detail::_register_callback_fn;
+  friend struct any_stop_callback;
 
   [[nodiscard]]
   constexpr virtual auto _register_callback(any::any<icallback> callback)
@@ -241,18 +235,6 @@ private:
 
 namespace detail
 {
-//////////////////////////////////////////////////////////////////////////////////////////
-// function object for registering a stop callback granted friendship to istop_token
-struct _register_callback_fn
-{
-  [[nodiscard]]
-  constexpr auto operator()(any::any<istop_token> &token, any::any<icallback> &callback) const
-      -> any::any<istop_callback>
-  {
-    return token._register_callback(std::move(callback));
-  }
-};
-
 //////////////////////////////////////////////////////////////////////////////////////////
 // _stop_callback_for to work around the fact that std::stop_callback does not have a
 // nested ::callback_type alias template.
@@ -275,15 +257,8 @@ struct _stop_callback_for<std::stop_token>
 // never_stop_token
 struct never_stop_token
 {
-  struct _callback
-  {
-    constexpr explicit _callback(never_stop_token, any::_ignore) noexcept
-    {
-    }
-  };
-
   template <class>
-  using callback_type = _callback;
+  using callback_type = any::_ignore;
 
   [[nodiscard]]
   static constexpr bool stop_requested() noexcept
@@ -304,16 +279,12 @@ struct never_stop_token
 // any_stop_token
 struct any_stop_token
 {
-private:
-  struct _callback;
-
-public:
   template <class Callback>
-  using callback_type                 = _callback;
+  using callback_type                 = any_stop_callback;
 
   constexpr any_stop_token() noexcept = default;
 
-  template <detail::_not_same_as<any_stop_token> Token>
+  template <any::_not_same_as<any_stop_token> Token>
   constexpr any_stop_token(Token token)
     : token_(_token_wrapper(std::move(token)))
   {
@@ -337,14 +308,9 @@ public:
     return token_.emplace(_token_wrapper(std::move(token)));
   }
 
-  template <class Token, class... Args>
-  constexpr auto emplace(Args &&...args) -> Token &
-  {
-    return token_.template emplace<_token_wrapper<Token>>(std::forward<Args>(args)...);
-  }
-
 private:
   friend struct any::access; // so that any::empty can call _empty_()
+  friend struct any_stop_callback;
 
   ////////////////////////////////////////////////////////////////////////////////////////
   // adds to Token a factory function for registering a stop callback
@@ -353,12 +319,6 @@ private:
   {
     constexpr explicit _token_wrapper(Token token)
       : Token(std::move(token))
-    {
-    }
-
-    template <class... Args>
-    constexpr explicit _token_wrapper(Args &&...args)
-      : Token(std::forward<Args>(args)...)
     {
     }
 
@@ -371,23 +331,25 @@ private:
     }
   };
 
-  struct _callback
-  {
-    explicit _callback(any_stop_token &token, any::any<icallback> callback)
-      : callback_(detail::_register_callback_fn()(token.token_, callback))
-    {
-    }
-
-  private:
-    any::any<istop_callback> callback_{};
-  };
-
   constexpr bool _empty_() const noexcept
   {
     return any::empty(token_);
   }
 
   any::any<istop_token> token_;
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// any_stop_callback
+struct any_stop_callback
+{
+  explicit any_stop_callback(any_stop_token &token, any::any<icallback> callback)
+    : callback_(token.token_._register_callback(std::move(callback)))
+  {
+  }
+
+private:
+  any::any<istop_callback> callback_{};
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
