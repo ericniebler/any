@@ -135,8 +135,8 @@ ANY_DIAG_SUPPRESS_MSVC(4141) // 'inline' used more than once
 
 namespace any
 {
-constexpr size_t default_buffer_size = 3 * sizeof(void *);
-constexpr char const *_pure_virt_msg = "internal error: pure virtual %s() called\n";
+inline constexpr size_t default_buffer_size = 3 * sizeof(void *);
+inline constexpr char const *_pure_virt_msg = "internal error: pure virtual %s() called\n";
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // forward declarations
@@ -152,7 +152,7 @@ template <template <class> class Interface>
 struct any_ptr;
 
 template <template <class> class Interface>
-struct any_const_ptr;
+struct any_cptr;
 
 template <template <class> class... BaseInterfaces>
 struct extends;
@@ -206,7 +206,7 @@ struct access
   {
     template <class T>
     [[ANY_ALWAYS_INLINE, nodiscard]]
-    inline constexpr auto &operator()(T &&t) const noexcept
+    inline constexpr auto &&operator()(T &&t) const noexcept
     {
       return std::forward<T>(t)._value_();
     }
@@ -258,7 +258,7 @@ struct access
     [[nodiscard]]
     constexpr auto operator()(Interface<Base> const &iface) const noexcept
     {
-      return any_const_ptr<Interface>(std::addressof(iface));
+      return any_cptr<Interface>(std::addressof(iface));
     }
   };
 
@@ -293,15 +293,36 @@ template <class Interface, template <class> class BaseInterface>
 concept extension_of =
     requires(Interface const &iface) { ::any::interface_cast<BaseInterface>(iface); };
 
+enum class _box_kind
+{
+  _abstract,
+  _object,
+  _proxy
+};
+
+enum class _root_kind
+{
+  _value,
+  _reference
+};
+
 //////////////////////////////////////////////////////////////////////////////////////////
 // _is_small: Model is Interface<T> for some concrete T
 template <class Model>
 [[nodiscard]]
 constexpr bool _is_small(size_t buffer_size) noexcept
 {
-  constexpr bool nothrow_movable =
-      !extension_of<Model, imovable> || std::is_nothrow_move_constructible_v<Model>;
-  return sizeof(Model) <= buffer_size && nothrow_movable;
+  if constexpr (Model::_root_kind == _root_kind::_reference)
+  {
+    ANY_ASSERT(sizeof(Model) <= buffer_size);
+    return true;
+  }
+  else
+  {
+    constexpr bool nothrow_movable =
+        !extension_of<Model, imovable> || std::is_nothrow_move_constructible_v<Model>;
+    return sizeof(Model) <= buffer_size && nothrow_movable;
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -358,19 +379,6 @@ private:
 //! Derived<Base<_iroot>>.
 template <template <class> class Interface, class BaseInterfaces = _bases_of<Interface>>
 using iabstract = Interface<_mcall<BaseInterfaces, _iroot>>;
-
-enum class _box_kind
-{
-  _abstract,
-  _object,
-  _proxy
-};
-
-enum class _root_kind
-{
-  _value,
-  _reference
-};
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // _iroot
@@ -446,31 +454,7 @@ struct _box
   }
 
 private:
-  Value value_;
-};
-
-// A specialization of _box to take advantage of EBO (empty base optimization):
-template <class Value>
-  requires std::is_empty_v<Value> && (!std::is_final_v<Value>)
-struct [[ANY_EMPTY_BASES]] _box<Value> : private Value
-{
-  constexpr explicit _box(Value value) noexcept
-    : Value(std::move(value))
-  {
-  }
-
-  template <class... Args>
-  constexpr explicit _box(Args &&...args) noexcept
-    : Value(std::forward<Args>(args)...)
-  {
-  }
-
-  template <class Self>
-  [[nodiscard]]
-  constexpr auto &&_value_(this Self &&self) noexcept
-  {
-    return std::forward<_copy_cvref_t<Self, Value>>(self);
-  }
+  [[no_unique_address]] Value value_;
 };
 
 template <class Interface, _box_kind BoxKind>
@@ -622,6 +606,9 @@ struct _value // _value_proxy_model
 template <template <class> class Interface>
 using _value_proxy_model = _value<Interface>;
 
+template <class _Interface, _root_kind _RootKind>
+concept _has_root_kind = _Interface::__root_kind == _RootKind;
+
 //////////////////////////////////////////////////////////////////////////////////////////
 //! interface
 template <template <class> class Interface,
@@ -633,7 +620,7 @@ struct interface : Base
 {
   static_assert(std::popcount(BufferAlignment) == 1, "BufferAlignment must be a power of two");
   using _bases_type     = BaseInterfaces;
-  using _interface_type = iabstract<Interface, BaseInterfaces>;
+  using _this_interface_type = iabstract<Interface, BaseInterfaces>;
   using Base::_indirect_bind_;
   using Base::_slice_to_;
   using Base::Base;
@@ -644,32 +631,38 @@ struct interface : Base
   static constexpr size_t _buffer_alignment =
       BufferAlignment > Base::_buffer_alignment ? BufferAlignment : Base::_buffer_alignment;
 
-  static constexpr bool _nothrow_slice = ::any::_nothrow_slice<_interface_type, Base, _buffer_size>;
+  static constexpr bool _can_slice = extension_of<Base, imovable>
+                                    && (_has_root_kind<Base, _root_kind::_value>
+                                        || extension_of<Base, icopyable>);
+
+  static constexpr bool _nothrow_slice = ::any::_nothrow_slice<_this_interface_type, Base, _buffer_size>;
 
   //! @pre !empty(*this)
   constexpr virtual void _slice_to_(_value_proxy_root<Interface> &out) noexcept(_nothrow_slice)
   {
+    ANY_ASSERT(_can_slice);
     ANY_ASSERT(!empty(*this));
-    if constexpr (Base::_box_kind != _box_kind::_abstract)
+
+    if constexpr (Base::_box_kind == _box_kind::_abstract || !_can_slice)
     {
-      using root_interface_t           = Base::interface_type;
-      constexpr bool is_root_interface = std::same_as<root_interface_t, _interface_type>;
-      ANY_ASSERT(!is_root_interface);
-      if constexpr (!is_root_interface)
-      {
-        if constexpr (Base::_box_kind == _box_kind::_proxy)
-        {
-          value(*this)._slice_to_(out);
-          reset(*this);
-        }
-        else // if constexpr (Base::_box_kind == _box_kind::_object)
-        {
-          // Move from type-erased values, but not from type-erased references
-          constexpr bool is_value = (Base::_root_kind == _root_kind::_value);
-          // potentially throwing:
-          out.emplace(ANY_DECAY_COPY(::any::_move_if<is_value>(value(*this))));
-        }
-      }
+      ANY_ASSERT(!"should never be here: _slice_to_ called on a type that cannot be sliced");
+      ::any::unreachable();
+    }
+    else if constexpr (std::same_as<typename Base::interface_type, _this_interface_type>)
+    {
+      ANY_ASSERT(!"we should be calling _move_to or _copy_to, not _slice_to_");
+      ::any::unreachable();
+    }
+    else if constexpr (Base::_box_kind == _box_kind::_proxy)
+    {
+      value(*this)._slice_to_(out);
+      reset(*this);
+    }
+    else
+    {
+      // Move from type-erased values, but not from type-erased references.
+      constexpr bool is_value = Base::_root_kind == _root_kind::_value;
+      out.emplace(value(::any::_maybe_move<is_value>(*this)));  // could throw
     }
   }
 
@@ -718,24 +711,24 @@ struct [[ANY_EMPTY_BASES]] _value_root
   using _box<Value>::_value_;
 
   [[nodiscard]]
-  constexpr bool _empty_() const noexcept final override
+  constexpr bool _empty_() const noexcept final
   {
     return false;
   }
 
-  constexpr void _reset_() noexcept final override
+  constexpr void _reset_() noexcept final
   {
     // no-op
   }
 
   [[nodiscard]]
-  constexpr type_info const &_type_() const noexcept final override
+  constexpr type_info const &_type_() const noexcept final
   {
     return ANY_TYPEID(Value);
   }
 
   [[nodiscard]]
-  constexpr void *_data_() const noexcept final override
+  constexpr void *_data_() const noexcept final
   {
     return const_cast<void *>(static_cast<void const *>(std::addressof(value(*this))));
   }
@@ -908,7 +901,7 @@ private:
   }
 
   [[nodiscard]]
-  constexpr bool _empty_() const noexcept final override
+  constexpr bool _empty_() const noexcept final
   {
     if consteval
     {
@@ -946,7 +939,7 @@ private:
   }
 
   [[ANY_ALWAYS_INLINE]]
-  inline constexpr void _reset_() noexcept final override
+  inline constexpr void _reset_() noexcept final
   {
     if consteval
     {
@@ -967,13 +960,13 @@ private:
   }
 
   [[nodiscard]]
-  constexpr type_info const &_type_() const noexcept final override
+  constexpr type_info const &_type_() const noexcept final
   {
     return _empty_() ? ANY_TYPEID(void) : type(_value_());
   }
 
   [[nodiscard]]
-  constexpr void *_data_() const noexcept final override
+  constexpr void *_data_() const noexcept final
   {
     return _empty_() ? nullptr : data(_value_());
   }
@@ -1105,24 +1098,24 @@ struct [[ANY_EMPTY_BASES]] _reference_root<Interface, Value>
   }
 
   [[nodiscard]]
-  constexpr bool _empty_() const noexcept final override
+  constexpr bool _empty_() const noexcept final
   {
     return false;
   }
 
-  constexpr void _reset_() noexcept final override
+  constexpr void _reset_() noexcept final
   {
     // no-op
   }
 
   [[nodiscard]]
-  constexpr type_info const &_type_() const noexcept final override
+  constexpr type_info const &_type_() const noexcept final
   {
     return ANY_TYPEID(value_type);
   }
 
   [[nodiscard]]
-  constexpr void *_data_() const noexcept final override
+  constexpr void *_data_() const noexcept final
   {
     return const_cast<void *>(static_cast<void const *>(std::addressof(_value_())));
   }
@@ -1153,7 +1146,7 @@ struct _reference_root<Interface, Value, iabstract<Extension>> : _reference_root
   using _reference_root<Interface, Value>::_reference_root;
 
   [[nodiscard]]
-  constexpr Value &_dereference_() const noexcept final override
+  constexpr Value &_dereference_() const noexcept final
   {
     auto *root_ptr     = (*this)._get_root_ptr_();
     using value_root_t = _value_root<Extension, value_type>;
@@ -1186,7 +1179,7 @@ struct [[ANY_EMPTY_BASES]] _reference_proxy_root
   _reference_proxy_root(_reference_proxy_root &&)            = delete;
   _reference_proxy_root &operator=(_reference_proxy_root &&) = delete;
 
-  constexpr void _copy(_reference_proxy_root const &other) noexcept
+  constexpr void _copy_from(_reference_proxy_root const &other) noexcept
   {
     if consteval
     {
@@ -1299,7 +1292,7 @@ struct [[ANY_EMPTY_BASES]] _reference_proxy_root
   }
 
   [[nodiscard]]
-  constexpr bool _empty_() const noexcept final override
+  constexpr bool _empty_() const noexcept final
   {
     if consteval
     {
@@ -1311,7 +1304,7 @@ struct [[ANY_EMPTY_BASES]] _reference_proxy_root
     }
   }
 
-  constexpr void _reset_() noexcept final override
+  constexpr void _reset_() noexcept final
   {
     if consteval
     {
@@ -1324,13 +1317,13 @@ struct [[ANY_EMPTY_BASES]] _reference_proxy_root
   }
 
   [[nodiscard]]
-  constexpr type_info const &_type_() const noexcept final override
+  constexpr type_info const &_type_() const noexcept final
   {
     return _empty_() ? ANY_TYPEID(void) : type(_value_());
   }
 
   [[nodiscard]]
-  constexpr void *_data_() const noexcept final override
+  constexpr void *_data_() const noexcept final
   {
     return _empty_() ? nullptr : data(_value_());
   }
@@ -1525,7 +1518,7 @@ struct _basic_cast_t
 
   template <template <class> class Interface>
   [[nodiscard]]
-  constexpr auto *operator()(any_const_ptr<Interface> const &ptr) const
+  constexpr auto *operator()(any_cptr<Interface> const &ptr) const
   {
     return (*this)(ptr.operator->());
   }
@@ -1590,7 +1583,7 @@ concept _model_of = _decayed<Value> && !std::derived_from<Value, _iroot>;
 //////////////////////////////////////////////////////////////////////////////////////////
 // any
 template <template <class> class Interface>
-struct any final : _value_proxy_model<Interface>
+struct any : _value_proxy_model<Interface>
 {
 private:
   template <class Other>
@@ -1623,7 +1616,7 @@ public:
     requires extension_of<Interface<Other>, imovable> && (Other::_root_kind == _root_kind::_value)
   constexpr any(Interface<Other> other) noexcept(_as_large_as<Other>)
   {
-    (*this)._assign(std::move(other));
+    (*this)._assign_from(std::move(other));
   }
 
   template <class Other>
@@ -1632,8 +1625,8 @@ public:
   constexpr any(Interface<Other> const &other)
   {
     Interface<Other> temp;
-    temp._copy(other);
-    (*this)._assign(std::move(temp));
+    temp._copy_from(other);
+    (*this)._assign_from(std::move(temp));
   }
 
   template <_model_of<Interface> Value>
@@ -1650,7 +1643,7 @@ public:
   constexpr any &operator=(Interface<Other> other) noexcept(_as_large_as<Other>)
   {
     reset(*this);
-    (*this)._assign(std::move(other));
+    (*this)._assign_from(std::move(other));
     return *this;
   }
 
@@ -1664,10 +1657,10 @@ public:
       return *this;
 
     Interface<Other> temp;
-    temp._copy(other);
+    temp._copy_from(other);
 
     reset(*this);
-    (*this)._assign(std::move(temp));
+    (*this)._assign_from(std::move(temp));
     return *this;
   }
 
@@ -1683,21 +1676,26 @@ private:
   // noexcept.
   template <class Other>
     requires extension_of<Interface<Other>, imovable>
-  constexpr void _assign(Interface<Other> &&other) noexcept(_as_large_as<Other>)
+  constexpr void _assign_from(Interface<Other> &&other) noexcept(_as_large_as<Other>)
   {
+    using root_t = _value_proxy_root<Interface>;
+    constexpr bool is_value = Other::_root_kind == _root_kind::_value;
     constexpr bool ptr_convertible = std::derived_from<Other, iabstract<Interface>>;
 
     if (empty(other))
-    {
       return;
-    }
-    else if constexpr (Other::_root_kind == _root_kind::_reference || !ptr_convertible)
+
+    if constexpr (!is_value || !ptr_convertible)  // compile-time condition
     {
       return other._slice_to_(*this);
     }
-    else if (other._in_situ_())
+    else if (other._in_situ_())  // runtime condition
     {
-      return other._slice_to_(*this);
+      using other_interface_t = Other::interface_type;
+      if constexpr (std::same_as<other_interface_t, iabstract<Interface>>)
+        static_cast<root_t &>(*this) = static_cast<root_t &&>(other);
+      else
+        return other._slice_to_(*this);
     }
     else if consteval
     {
@@ -1780,7 +1778,7 @@ private:
   friend struct _any_ptr_base;
 
   friend struct any_ptr<Interface>;
-  friend struct any_const_ptr<Interface>;
+  friend struct any_cptr<Interface>;
 
   //! @param other A pointer to a value proxy model implementing Interface.
   template <extension_of<Interface> CvValueProxy>
@@ -1814,7 +1812,7 @@ private:
     // in the case where CvReferenceProxy is a base class of model_type, we can simply
     // downcast and copy the model directly.
     else if constexpr (std::derived_from<model_type, CvReferenceProxy>)
-      reference_._copy(*::any::_polymorphic_downcast<model_type const *>(proxy_ptr));
+      reference_._copy_from(*::any::_polymorphic_downcast<model_type const *>(proxy_ptr));
     // Otherwise, we are assigning from a derived reference to a base reference, and the
     // other reference is indirect (i.e., it holds a _reference_model in its buffer). We
     // need to copy the referant model.
@@ -1846,9 +1844,9 @@ struct any_ptr : _any_ptr_base<Interface>
 
   // Disable const-to-mutable conversions:
   template <template <class> class Other>
-  any_ptr(any_const_ptr<Other> const &) = delete;
+  any_ptr(any_cptr<Other> const &) = delete;
   template <template <class> class Other>
-  any_ptr &operator=(any_const_ptr<Other> const &) = delete;
+  any_ptr &operator=(any_cptr<Other> const &) = delete;
 
   template <_model_of<Interface> Value>
   constexpr any_ptr(Value *value_ptr) noexcept
@@ -1903,29 +1901,29 @@ template <template <class> class Interface, class Base>
 any_ptr(Interface<Base> *) -> any_ptr<Interface>;
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// any_const_ptr
+// any_cptr
 template <template <class> class Interface>
-struct any_const_ptr : _any_ptr_base<Interface>
+struct any_cptr : _any_ptr_base<Interface>
 {
   using _any_ptr_base<Interface>::_any_ptr_base;
   using _any_ptr_base<Interface>::operator=;
 
   template <_model_of<Interface> Value>
-  constexpr any_const_ptr(Value const *value_ptr) noexcept
+  constexpr any_cptr(Value const *value_ptr) noexcept
     : _any_ptr_base<Interface>()
   {
     (*this)._value_assign(value_ptr);
   }
 
   template <extension_of<Interface> Proxy>
-  constexpr any_const_ptr(Proxy const *proxy_ptr) noexcept
+  constexpr any_cptr(Proxy const *proxy_ptr) noexcept
     : _any_ptr_base<Interface>()
   {
     (*this)._proxy_assign(proxy_ptr);
   }
 
   template <_model_of<Interface> Value>
-  constexpr any_const_ptr &operator=(Value const *value_ptr) noexcept
+  constexpr any_cptr &operator=(Value const *value_ptr) noexcept
   {
     reset((*this).reference_);
     (*this)._value_assign(value_ptr);
@@ -1933,14 +1931,14 @@ struct any_const_ptr : _any_ptr_base<Interface>
   }
 
   template <extension_of<Interface> Proxy>
-  constexpr any_const_ptr &operator=(Proxy const *proxy_ptr) noexcept
+  constexpr any_cptr &operator=(Proxy const *proxy_ptr) noexcept
   {
     reset((*this).reference_);
     (*this)._proxy_assign(proxy_ptr);
     return *this;
   }
 
-  friend constexpr void swap(any_const_ptr &a, any_const_ptr &b) noexcept
+  friend constexpr void swap(any_cptr &a, any_cptr &b) noexcept
   {
     a.reference_.swap(b.reference_);
   }
@@ -1959,7 +1957,7 @@ struct any_const_ptr : _any_ptr_base<Interface>
 };
 
 template <template <class> class Interface, class Base>
-any_const_ptr(Interface<Base> const *) -> any_const_ptr<Interface>;
+any_cptr(Interface<Base> const *) -> any_cptr<Interface>;
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // iequality_comparable
@@ -1977,7 +1975,7 @@ struct iequality_comparable : interface<iequality_comparable, Base>
 
 private:
   [[nodiscard]]
-  constexpr virtual bool _equal_to(any_const_ptr<iequality_comparable> other) const
+  constexpr virtual bool _equal_to(any_cptr<iequality_comparable> other) const
   {
     auto const &type = ::any::type(*this);
 

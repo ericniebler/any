@@ -89,7 +89,7 @@ using std::unreachable;
   // Uses compiler specific extensions if possible.
   // Even if no extension is used, undefined behavior is still raised by
   // an empty function body and the noreturn attribute.
-#  if defined(_MSC_VER) && !defined(__clang__) // MSVC
+#  if defined(MSC_VER) && !defined(__clang__) // MSVC
   __assume(false);
 #  else                                        // GCC, Clang
   __builtin_unreachable();
@@ -189,6 +189,16 @@ template <class T>
 inline constexpr T _decay_copy(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
 {
   return value;
+}
+
+template <bool DoMove, class T>
+[[nodiscard]]
+inline constexpr auto _maybe_move(T& t) noexcept -> auto&&
+{
+  if constexpr (DoMove)
+    return static_cast<T&&>(t);
+  else
+    return t;
 }
 
 } // namespace any

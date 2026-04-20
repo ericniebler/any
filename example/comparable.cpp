@@ -38,7 +38,7 @@ struct iequality_comparable : any::interface<iequality_comparable, Base>
 
 private:
   [[nodiscard]]
-  constexpr virtual bool _equal_to(any::any_const_ptr<iequality_comparable> other) const
+  constexpr virtual bool _equal_to(any::any_cptr<iequality_comparable> other) const
   {
     auto const &type = ::any::type(*this);
 
