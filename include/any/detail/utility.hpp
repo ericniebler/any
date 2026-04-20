@@ -91,7 +91,7 @@ using std::unreachable;
   // an empty function body and the noreturn attribute.
 #  if defined(MSC_VER) && !defined(__clang__) // MSVC
   __assume(false);
-#  else                                        // GCC, Clang
+#  else                                       // GCC, Clang
   __builtin_unreachable();
 #  endif
 }
@@ -193,10 +193,10 @@ inline constexpr T _decay_copy(T value) noexcept(std::is_nothrow_move_constructi
 
 template <bool DoMove, class T>
 [[nodiscard]]
-inline constexpr auto _maybe_move(T& t) noexcept -> auto&&
+inline constexpr auto _maybe_move(T &t) noexcept -> auto &&
 {
   if constexpr (DoMove)
-    return static_cast<T&&>(t);
+    return static_cast<T &&>(t);
   else
     return t;
 }

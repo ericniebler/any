@@ -619,7 +619,7 @@ template <template <class> class Interface,
 struct interface : Base
 {
   static_assert(std::popcount(BufferAlignment) == 1, "BufferAlignment must be a power of two");
-  using _bases_type     = BaseInterfaces;
+  using _bases_type          = BaseInterfaces;
   using _this_interface_type = iabstract<Interface, BaseInterfaces>;
   using Base::_indirect_bind_;
   using Base::_slice_to_;
@@ -631,11 +631,12 @@ struct interface : Base
   static constexpr size_t _buffer_alignment =
       BufferAlignment > Base::_buffer_alignment ? BufferAlignment : Base::_buffer_alignment;
 
-  static constexpr bool _can_slice = extension_of<Base, imovable>
-                                    && (_has_root_kind<Base, _root_kind::_value>
-                                        || extension_of<Base, icopyable>);
+  static constexpr bool _can_slice =
+      extension_of<Base, imovable>
+      && (_has_root_kind<Base, _root_kind::_value> || extension_of<Base, icopyable>);
 
-  static constexpr bool _nothrow_slice = ::any::_nothrow_slice<_this_interface_type, Base, _buffer_size>;
+  static constexpr bool _nothrow_slice =
+      ::any::_nothrow_slice<_this_interface_type, Base, _buffer_size>;
 
   //! @pre !empty(*this)
   constexpr virtual void _slice_to_(_value_proxy_root<Interface> &out) noexcept(_nothrow_slice)
@@ -662,7 +663,7 @@ struct interface : Base
     {
       // Move from type-erased values, but not from type-erased references.
       constexpr bool is_value = Base::_root_kind == _root_kind::_value;
-      out.emplace(value(::any::_maybe_move<is_value>(*this)));  // could throw
+      out.emplace(value(::any::_maybe_move<is_value>(*this))); // could throw
     }
   }
 
@@ -1678,18 +1679,18 @@ private:
     requires extension_of<Interface<Other>, imovable>
   constexpr void _assign_from(Interface<Other> &&other) noexcept(_as_large_as<Other>)
   {
-    using root_t = _value_proxy_root<Interface>;
-    constexpr bool is_value = Other::_root_kind == _root_kind::_value;
+    using root_t                   = _value_proxy_root<Interface>;
+    constexpr bool is_value        = Other::_root_kind == _root_kind::_value;
     constexpr bool ptr_convertible = std::derived_from<Other, iabstract<Interface>>;
 
     if (empty(other))
       return;
 
-    if constexpr (!is_value || !ptr_convertible)  // compile-time condition
+    if constexpr (!is_value || !ptr_convertible) // compile-time condition
     {
       return other._slice_to_(*this);
     }
-    else if (other._in_situ_())  // runtime condition
+    else if (other._in_situ_()) // runtime condition
     {
       using other_interface_t = Other::interface_type;
       if constexpr (std::same_as<other_interface_t, iabstract<Interface>>)
