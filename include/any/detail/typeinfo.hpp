@@ -193,6 +193,6 @@ inline constexpr type_index type_index_of = _detail::_typeid_of<T>::id;
 
 // For a given type_index object, return the associated type
 template <type_index Info>
-using typeof_t = typename decltype(_typeid_lookup(_detail::_typeid_c<Info>()))::type;
+using typeof_t = decltype(_typeid_lookup(_detail::_typeid_c<Info>()))::type;
 
 } // namespace any

@@ -828,14 +828,14 @@ struct [[ANY_EMPTY_BASES]] _value_proxy_root
         return std::swap(this_ptr, that_ptr);
 
       if (this_ptr == nullptr)
-        return value(other)._move_to(root_ptr_, buffer_);
+        return other._move_to_empty(*this);
 
       if (that_ptr == nullptr)
-        return value(*this)._move_to(other.root_ptr_, other.buffer_);
+        return (*this)._move_to_empty(other);
 
       auto temp = std::move(*this);
-      value(other)._move_to(root_ptr_, buffer_);
-      value(temp)._move_to(other.root_ptr_, other.buffer_);
+      other._move_to_empty(*this);
+      temp._move_to_empty(other);
     }
   }
 
@@ -917,6 +917,31 @@ private:
     else
     {
       return *::any::start_lifetime_as<_tagged_ptr>(buffer_) == nullptr;
+    }
+  }
+
+  constexpr void _move_to_empty(_value_proxy_root &other) noexcept
+    requires _movable
+  {
+    if consteval
+    {
+      other.root_ptr_ = std::exchange(root_ptr_, nullptr);
+    }
+    else
+    {
+      ANY_ASSERT(!empty(*this));
+      ANY_ASSERT(empty(other));
+      auto &_this_ptr = *::any::start_lifetime_as<_tagged_ptr>(buffer_);
+      auto &_that_ptr = *::any::start_lifetime_as<_tagged_ptr>(other.buffer_);
+      if (_this_ptr._is_tagged())
+      {
+        _that_ptr = std::exchange(_this_ptr, nullptr);
+      }
+      else
+      {
+        value(*this)._move_to(other.root_ptr_, other.buffer_);
+        reset(*this);
+      }
     }
   }
 
