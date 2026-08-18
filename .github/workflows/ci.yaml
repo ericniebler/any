@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Code coverage (clang 22)
     permissions:
-      contents: read  # This is required for actions/checkout
+      contents: write  # required to push the report to gh-pages
     steps:
       - name: Checkout any
         uses: actions/checkout@v4
@@ -118,11 +118,19 @@ jobs:
           # Build the test binary and generate the coverage report
           cmake --build build --target coverage -v;
 
-      - name: Upload coverage report
+      - name: Upload coverage report (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: build/coverage/html
+
+      - name: Publish coverage report to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build/coverage/html
+          destination_dir: coverage
 
   build-windows:
     runs-on: windows-2022
