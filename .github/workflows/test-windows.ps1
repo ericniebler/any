@@ -21,6 +21,7 @@ New-Item -ItemType Directory $BuildDirectory | Out-Null
 
 Invoke-NativeCommand cmake -B $BuildDirectory -G Ninja `
 	"-DCMAKE_BUILD_TYPE=$Config" `
+	"-DBUILD_TESTING:BOOL=ON" `
 	"-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT:STRING=Embedded" `
 	.
 Invoke-NativeCommand cmake --build $BuildDirectory
