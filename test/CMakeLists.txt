@@ -21,3 +21,7 @@ target_compile_options(
         $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wall -Wextra -Wpedantic -Werror>)
 
 catch_discover_tests(any_test)
+
+if (ANY_ENABLE_COVERAGE)
+  any_add_coverage_target(any_test)
+endif()

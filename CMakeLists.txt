@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.10)
 project(any LANGUAGES CXX VERSION 0.0.1)
 
 include(cmake/clangd_compile_info.cmake)
+include(cmake/coverage.cmake)
+
+option(ANY_ENABLE_COVERAGE "Instrument any_test with clang source-based code coverage" OFF)
 
 # download CPM.cmake
 file(DOWNLOAD

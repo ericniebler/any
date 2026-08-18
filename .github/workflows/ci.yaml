@@ -62,6 +62,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
             -DCMAKE_CXX_FLAGS="${{ matrix.cxxflags }}" \
             -DCMAKE_VERBOSE_MAKEFILE=ON \
+            -DBUILD_TESTING=ON \
             ;
 
           # Compile
@@ -77,6 +78,51 @@ jobs:
       - build-cpu
     steps:
       - run: echo "CI (CPU) success"
+
+  coverage:
+    runs-on: ubuntu-latest
+    name: Code coverage (clang 22)
+    permissions:
+      contents: read  # This is required for actions/checkout
+    steps:
+      - name: Checkout any
+        uses: actions/checkout@v4
+        with:
+          path: any
+          persist-credentials: false
+      - name: Build, test, and measure coverage
+        run: |
+          set -e;
+          source /etc/profile
+          set -x;
+
+          # Install dependencies
+          sudo apt-get update;
+          sudo apt-get install -y lsb-release wget software-properties-common
+
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22
+
+          sudo apt-get install -y ninja-build cmake clang-22 libc++-22-dev
+
+          # Configure
+          cmake -S any -B build -GNinja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++-22 \
+            -DCMAKE_CXX_FLAGS="-stdlib=libc++" \
+            -DBUILD_TESTING=ON \
+            -DANY_ENABLE_COVERAGE=ON \
+            ;
+
+          # Build the test binary and generate the coverage report
+          cmake --build build --target coverage -v;
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/coverage/html
 
   build-windows:
     runs-on: windows-2022
